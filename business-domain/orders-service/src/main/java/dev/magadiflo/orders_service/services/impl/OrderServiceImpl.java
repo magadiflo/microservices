@@ -1,20 +1,14 @@
-# Orders Service
+package dev.magadiflo.orders_service.services.impl;
 
-Implementamos el microservicio Orders con sus OrderItems. Este microservicio hará peticiones al microservicio de
-inventarios. Para realizar las peticiones utilizamos el nuevo cliente creado a partir de **Spring Boot 3.2**
-`RestClient`:
-
-## RestClient (Spring Boot 3.2)
-
-Como alternativa a `RestTemplate` y al uso de `WebClient` (de forma síncrona), es que a partir de `Spring Boot 3.2`
-está disponible un nuevo cliente `RestClient`.
-
-En nuestro caso lo usaremos para hacer peticiones desde el servicio `OrderServiceImpl` hacia el microservicio de
-inventarios.
-
-````java
-/* other imports */
-
+import dev.magadiflo.orders_service.mapper.OrderMapper;
+import dev.magadiflo.orders_service.model.dtos.BaseResponse;
+import dev.magadiflo.orders_service.model.dtos.OrderRequest;
+import dev.magadiflo.orders_service.model.entities.Order;
+import dev.magadiflo.orders_service.repositories.IOrderRepository;
+import dev.magadiflo.orders_service.services.IOrderService;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
 @Service
@@ -49,4 +43,3 @@ public class OrderServiceImpl implements IOrderService {
         this.orderRepository.save(order);
     }
 }
-````
