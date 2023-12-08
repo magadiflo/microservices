@@ -85,3 +85,41 @@ $ curl -v -X POST -H "Content-Type: application/json" -d "{\"items\": [{\"sku\":
 El error mostrado anteriormente se debe a que dentro del código validamos que exista el producto que se está pasando
 en la orden, si el producto no existe lanzamos la exception
 `throw new IllegalArgumentException("Some of products are not in stock")`, produciéndose el error interno `500`.
+
+Listamos todas las órdenes registradas:
+
+````bash
+$  curl -v http://localhost:8082/api/v1/orders | jq
+
+>
+< HTTP/1.1 200
+< Content-Type: application/json
+<
+[
+  {
+    "id": 2,
+    "orderNumber": "1e3b15e9-c3e5-4438-a454-5462268f4a6c",
+    "items": [
+      {
+        "id": 2,
+        "sku": "000001",
+        "price": 500,
+        "quantity": 2
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "orderNumber": "4ad678c4-5f54-4163-90e2-3b14103c8e71",
+    "items": [
+      {
+        "id": 5,
+        "sku": "000002",
+        "price": 230,
+        "quantity": 14
+      }
+    ]
+  },
+  {...}
+]
+````

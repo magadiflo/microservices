@@ -3,6 +3,7 @@ package dev.magadiflo.orders_service.services.impl;
 import dev.magadiflo.orders_service.mapper.OrderMapper;
 import dev.magadiflo.orders_service.model.dtos.BaseResponse;
 import dev.magadiflo.orders_service.model.dtos.OrderRequest;
+import dev.magadiflo.orders_service.model.dtos.OrderResponse;
 import dev.magadiflo.orders_service.model.entities.Order;
 import dev.magadiflo.orders_service.repositories.IOrderRepository;
 import dev.magadiflo.orders_service.services.IOrderService;
@@ -10,6 +11,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
+
+import java.util.List;
 
 @Service
 public class OrderServiceImpl implements IOrderService {
@@ -22,6 +25,11 @@ public class OrderServiceImpl implements IOrderService {
         this.restClient = RestClient.builder()
                 .baseUrl("http://localhost:8083/api/v1/inventories")
                 .build();
+    }
+
+    @Override
+    public List<OrderResponse> getAllOrders() {
+        return this.orderRepository.findAll().stream().map(OrderMapper::mapToOrderResponse).toList();
     }
 
     @Override
