@@ -50,3 +50,38 @@ public class OrderServiceImpl implements IOrderService {
     }
 }
 ````
+
+## Probando endpoints
+
+Probamos el endpoint para crear una orden:
+
+````bash
+$  curl -v -X POST -H "Content-Type: application/json" -d "{\"items\": [{\"sku\": \"000001\", \"price\": 500, \"quantity\": 2}]}" http://localhost:8082/api/v1/orders
+
+>
+< HTTP/1.1 201
+< Content-Type: text/plain;charset=UTF-8
+<
+Order placed successfully* Connection
+````
+
+Tratamos de registrar una orden con un producto que no existe:
+
+````bash
+$ curl -v -X POST -H "Content-Type: application/json" -d "{\"items\": [{\"sku\": \"000009\", \"price\": 500, \"quantity\": 2}]}" http://localhost:8082/api/v1/orders
+
+>
+< HTTP/1.1 500
+< Content-Type: application/json
+<
+{
+  "timestamp":"2023-12-08T22:49:10.610+00:00",
+  "status":500,
+  "error":"Internal Server Error",
+  "path":"/api/v1/orders"
+}
+````
+
+El error mostrado anteriormente se debe a que dentro del código validamos que exista el producto que se está pasando
+en la orden, si el producto no existe lanzamos la exception
+`throw new IllegalArgumentException("Some of products are not in stock")`, produciéndose el error interno `500`.

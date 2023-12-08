@@ -29,7 +29,7 @@ public class OrderServiceImpl implements IOrderService {
     public void placeOrder(OrderRequest orderRequest) {
         // Check for inventory
         BaseResponse response = this.restClient.post()
-                .uri("in-stock")
+                .uri("/in-stock")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(orderRequest.items())
                 .retrieve()
