@@ -1,1 +1,27 @@
+server:
+  port: 8080
 
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      routes:
+        # Inventory service routes
+        - id: inventory-service-route
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/v1/inventories/**
+
+        # Order service routes
+        - id: orders-service-route
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/v1/orders/**
+
+        # Product service routes
+        - id: products-service-route
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/products/**
