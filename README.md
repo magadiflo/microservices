@@ -82,3 +82,14 @@ f63bcaa04b2f   postgres:15.2-alpine   "docker-entrypoint.s…"   4 minutes ago  
 
 ¡Listo!, hasta este punto ya podemos conectarnos a las bases de datos de los contenedores usando alguna herramienta
 como `DBeaver`.
+
+---
+
+# Eureka Netflix y Spring Cloud Gateway
+
+---
+
+En esta sección del curso abordaremos dos componentes más de la arquitectura de microservicios: `Eureka Netflix` y
+`Spring Cloud Gateway`:
+
+![Eureka Server y Spring Cloud Gateway](./assets/04.eureka-y-gateway.png)
