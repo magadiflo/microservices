@@ -252,17 +252,17 @@ Ahora, necesitamos agregar algunas configuraciones en el  `application.yml`:
 
 ````yml
 eureka:
+  instance:
+    hostname: localhost   # (3)
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}   # (1)
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/    # (1)
-  instance:
-    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}   # (2)
+      defaultZone: http://localhost:8761/eureka/    # (2)
 ````
 
 **DONDE**
 
-- `(1)`, definimos la dirección eureka server. Aquí es donde nuestro cliente de eureka debe registrarse.
-- `(2)`, [(ver Changing the Eureka Instance ID)](https://cloud.spring.io/spring-cloud-netflix/multi/multi__service_discovery_eureka_clients.html),
+- `(1)`, [(ver Changing the Eureka Instance ID)](https://cloud.spring.io/spring-cloud-netflix/multi/multi__service_discovery_eureka_clients.html),
   antes de explicar el significado del valor de esa `instance-id`, debemos entender que, por
   defecto `solo hay un servicio por host`, es decir, por defecto una instancia de vanilla Netflix Eureka se registra con
   un ID que es igual a su nombre de host. Ahora, puede darse el caso de que existan múltiples instancias de un mismo
@@ -270,11 +270,41 @@ eureka:
   un identificador único para cada instancia. Eso lo logramos con esa expresión que colocamos en el `instance-id`. Con
   los metadatos mostrados en el valor del `instance-id` y múltiples instancias de servicio desplegadas en localhost, el
   valor aleatorio se inserta allí para hacer que la instancia sea única.
+- `(2)`, definimos la dirección eureka server. Aquí es donde nuestro cliente de eureka debe registrarse.
 
 **NOTA**
 
-> Es importante tener definido el nombre de la aplicación en los microservicios utilizando la configuración
-> `spring.application.name`
+> Debemos definir el nombre de cada microservicio utilizando la configuración `spring.application.name`
+
+**IMPORTANTE**
+
+Sobre la configuración `# (3) hostname: localhost`, este atributo **lo colocamos en todos los microservicios clientes de
+eureka** como solución al error que nos producía el microservicio `api-gateway`, ese error se muestra a continuación:
+
+````bash
+java.net.UnknownHostException: Failed to resolve 'DESKTOP-EGDL8Q6.mshome.net' [A(1), AAAA(28)]. Exceeded max queries per resolve 16 
+	at io.netty.resolver.dns.DnsResolveContext.finishResolve(DnsResolveContext.java:1097) ~[netty-resolver-dns-4.1.101.Final.jar:4.1.101.Final]
+	Suppressed: reactor.core.publisher.FluxOnAssembly$OnAssemblyException: 
+Error has been observed at the following site(s):
+	*__checkpoint ⇢ org.springframework.cloud.gateway.filter.WeightCalculatorWebFilter [DefaultWebFilterChain]
+	*__checkpoint ⇢ HTTP GET "/api/v1/products" [ExceptionHandlingWebHandler]
+````
+
+El error `UnknownHostException` indica que no se pudo resolver el nombre de host `DESKTOP-EGDL8Q6.mshome.net`. Este
+error se produce cuando el sistema no puede traducir el nombre de host proporcionado en una dirección IP. Por lo que
+estuve investigando y logré encontrar dos soluciones:
+
+- **1° solución**, agregar el `hostname: localhost`.
+  Al agregar la propiedad `hostname: localhost` en la configuración del cliente Eureka, estás indicando explícitamente
+  que el nombre de host que se debe utilizar para registrar el servicio en Eureka es "localhost". Esto evita problemas
+  de resolución de nombres de host, ya que "localhost" es una referencia a la propia máquina y generalmente se resuelve
+  correctamente.
+
+
+- **2° solución**, agregar `eureka.instance.prefer-ip-address: true`. Al establecer `prefer-ip-address: true` en la
+  configuración del cliente Eureka, estás indicando que prefieres utilizar la dirección IP en lugar del nombre de host
+  al registrarse en el servidor Eureka. Esto puede resolver el problema porque elimina la dependencia de la resolución
+  de nombres de host, evitando así el error `UnknownHostException` que experimentaste inicialmente.
 
 ## Ejecutando Eureka Server + Eureka Clients
 
