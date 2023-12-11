@@ -2,6 +2,9 @@ server:
   port: 8083
 
 spring:
+  application:
+    name: inventory-service
+
   datasource:
     url: jdbc:postgresql://localhost:5433/db_inventory_service
     username: magadiflo
@@ -17,3 +20,11 @@ spring:
 logging:
   level:
     org.hibernate.SQL: debug
+
+# Eureka client
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}

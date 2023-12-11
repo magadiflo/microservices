@@ -224,3 +224,64 @@ true
 **CONCLUSIÓN**
 > Desde ahora ya podemos hacer uso del `API-GATEWAY` para hacer peticiones a nuestros microservicios. Será el
 > `API-GATEWAY` quien redireccionará las peticiones al microservicio correspondiente.
+
+---
+
+## Registrando microservicio como Cliente de Eureka
+
+En este apartado veremos cómo registrar este microservicio de `api-gateway` como un cliente del servidor de eureka. La
+misma configuración será para los microservicios: `inventory-service, orders-service y products-service`.
+
+Lo primero que debemos hacer es agregar en el `pom.xml` de cada microservicio que queremos hacer cliente de eureka, la
+siguiente dependencia:
+
+````xml
+
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+</dependency>
+````
+
+**NOTA**
+> Al tener `spring-cloud-starter-netflix-eureka-client` en el classpath, su aplicación se registra automáticamente con
+> el servidor Eureka, eso significa que no necesitamos agregar alguna anotación adicional para habilitar al
+> microservicio como cliente de eureka, tan solo basta tener la dependencia anterior en el `pom.xml`.
+
+Ahora, necesitamos agregar algunas configuraciones en el  `application.yml`:
+
+````yml
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/    # (1)
+  instance:
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}   # (2)
+````
+
+**DONDE**
+
+- `(1)`, definimos la dirección eureka server. Aquí es donde nuestro cliente de eureka debe registrarse.
+- `(2)`, [(ver Changing the Eureka Instance ID)](https://cloud.spring.io/spring-cloud-netflix/multi/multi__service_discovery_eureka_clients.html),
+  antes de explicar el significado del valor de esa `instance-id`, debemos entender que, por
+  defecto `solo hay un servicio por host`, es decir, por defecto una instancia de vanilla Netflix Eureka se registra con
+  un ID que es igual a su nombre de host. Ahora, puede darse el caso de que existan múltiples instancias de un mismo
+  microservicio, así que para que el valor del `instance-id` no se repita, podemos anular el valor proporcionado por
+  un identificador único para cada instancia. Eso lo logramos con esa expresión que colocamos en el `instance-id`. Con
+  los metadatos mostrados en el valor del `instance-id` y múltiples instancias de servicio desplegadas en localhost, el
+  valor aleatorio se inserta allí para hacer que la instancia sea única.
+
+**NOTA**
+
+> Es importante tener definido el nombre de la aplicación en los microservicios utilizando la configuración
+> `spring.application.name`
+
+## Ejecutando Eureka Server + Eureka Clients
+
+Una vez que hemos configurado todos los microservicios que son clientes de eureka, como `api-gateway, inventory-service,
+orders-service y products-service` llega el momento de levantarlos. Iniciamos levantando `Eureka Server` y luego
+todos los demás microservicios.
+
+En la interfaz web de `Eureka Server` vemos las instancias de todos los microservicios registrados:
+
+![Register Clients In Eureka Server](./assets/01.eureka-server-register-clients.png)
