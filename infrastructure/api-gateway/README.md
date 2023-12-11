@@ -356,3 +356,112 @@ spring:
 - `uri: lb://inventory-service`, el `lb` indica que se aplicará `load balancer` y el `inventory-service` es el nombre
   del microservicio al que apunta. Ese nombre está definido en la configuración `spring.application.name` de dicho
   microservicio (lo mismo para las otras rutas).
+
+## Verificando si los microservicios siguen funcionando con la configuración del lb (load balancer)
+
+Luego de que modificamos las rutas del `api-gateway` para usar `Load Balancer` ejecutamos todos los microservicios
+para verificar que siguen funcionando como antes. Ejecutar en el siguiente orden:
+
+````
+1. inventory-service (eureka)
+2. microservicios del dominio (products, orders, inventories)
+3. api-gateway
+````
+
+Ahora realizaremos peticiones a los distintos microservicios pero usando el `api-gateway`, es decir las peticiones irán
+al servidor `api-gateway` a su puerto `8080` y este las redireccionará al microservicio correspondiente:
+
+- Listando productos:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/products | jq
+
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: application/json
+<
+[
+  {
+    "id": 1,
+    "sku": "000001",
+    "name": "Pc gamer",
+    "description": "Pc gamer de ultimaa generacion",
+    "price": 1800,
+    "status": true
+  },
+  {...},
+  {
+    "id": 5,
+    "sku": "000005",
+    "name": "Florecente",
+    "description": "Florecente Antiguo",
+    "price": 70,
+    "status": true
+  }
+]
+````
+
+- Registrando una orden:
+
+````bash
+$ curl -v -X POST -H "Content-Type: application/json" -d "{\"items\": [{\"sku\": \"000002\", \"price\": 3.90, \"quantity\": 3}]}" http://localhost:8080/api/v1/orders
+
+>
+< HTTP/1.1 201 Created
+< Content-Type: text/plain;charset=UTF-8
+<
+Order placed successfully
+````
+
+- Listando las órdenes:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/orders | jq
+
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: application/json
+<
+[
+  {
+    "id": 2,
+    "orderNumber": "1e3b15e9-c3e5-4438-a454-5462268f4a6c",
+    "items": [
+      {
+        "id": 2,
+        "sku": "000001",
+        "price": 500,
+        "quantity": 2
+      }
+    ]
+  },
+  {...},
+  {
+    "id": 13,
+    "orderNumber": "55614804-fa96-4058-9fe3-8f6fffb4a201",
+    "items": [
+      {
+        "id": 15,
+        "sku": "000002",
+        "price": 3.9,
+        "quantity": 3
+      }
+    ]
+  }
+]
+````
+
+- Verificando inventario de un producto:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/inventories/000002 | jq
+
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: application/json
+<
+true
+````
