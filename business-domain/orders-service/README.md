@@ -12,6 +12,12 @@ está disponible un nuevo cliente `RestClient`.
 En nuestro caso lo usaremos para hacer peticiones desde el servicio `OrderServiceImpl` hacia el microservicio de
 inventarios.
 
+**NOTA**
+
+> Más adelante usaremos `Eureka` y `Gateway` con `LoadBalancer`, así que para poder usar esta característica de
+> `LoadBalancer` debemos crear un @Bean del tipo `RestClient.builder`, pero por ahora usaremos directamente el
+> `RestClient`.
+
 ````java
 /* other imports */
 
@@ -123,3 +129,51 @@ $  curl -v http://localhost:8082/api/v1/orders | jq
   {...}
 ]
 ````
+
+## [Spring RestClient como un LoadBalancer Client](https://docs.spring.io/spring-cloud-commons/reference/spring-cloud-commons/common-abstractions.html#rest-client-loadbalancer-client)
+
+En este punto del curso, tenemos los microservicios con `Eureka Client` y además hemos implementado el `api-gateway`,
+por lo que ahora necesitamos configurar un `RestClient` para que utilice un cliente con `Load Balancer`. Actualmente,
+tenemos un `RestClient` que está siendo inyectado directamente en la clase `OrderServiceImpl`. Si bien es cierto, esto
+ha funcionado anteriormente, pero ahora como queremos hacer uso de `Load Balancer` debemos cambiar la configuración.
+
+Crearemos una clase de configuración donde expondremos un bean del tipo `RestClient.Builder`:
+
+````java
+
+@Configuration
+public class RestClientConfig {
+    @LoadBalanced
+    //<-- Annotation para marcar un bean RestTemplate, RestClient.Builder o WebClient.Builder para configurarlo para utilizar un LoadBalancerClient.
+    @Bean
+    RestClient.Builder restClientBuilder() {
+        return RestClient.builder();
+    }
+}
+````
+
+Ahora, necesitamos inyectar el bean en la clase de servicio donde será usado:
+
+````java
+
+@Service
+public class OrderServiceImpl implements IOrderService {
+
+    private final IOrderRepository orderRepository;
+    private final RestClient restClient;
+
+    public OrderServiceImpl(IOrderRepository orderRepository, RestClient.Builder restClientBuilder) {
+        this.orderRepository = orderRepository;
+        this.restClient = restClientBuilder.baseUrl("lb://inventory-service/api/v1/inventories").build();
+    }
+
+    /* Other code */
+}
+````
+
+Como observamos en el código anterior estamos inyectando el bean `RestClient.Builder` por constructor y luego definiendo
+una url base y finalmente creando un `RestClient` que luego será usada en el método `placeOrder(...)`. Lo interesante
+con esta modificación es que ahora el `RestClient` ya soporta `Load Balancer`, precisamente por eso es que nuestra
+`baseUrl()` tiene el `lb://inventory-service`, esa dirección apunta al microservicio de inventarios pero usando load
+balancer.
+

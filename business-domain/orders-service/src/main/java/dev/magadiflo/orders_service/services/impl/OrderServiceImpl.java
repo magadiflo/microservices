@@ -20,11 +20,9 @@ public class OrderServiceImpl implements IOrderService {
     private final IOrderRepository orderRepository;
     private final RestClient restClient;
 
-    public OrderServiceImpl(IOrderRepository orderRepository) {
+    public OrderServiceImpl(IOrderRepository orderRepository, RestClient.Builder restClientBuilder) {
         this.orderRepository = orderRepository;
-        this.restClient = RestClient.builder()
-                .baseUrl("http://localhost:8080/api/v1/inventories") //Colocando ruta de api-gateway
-                .build();
+        this.restClient = restClientBuilder.baseUrl("lb://inventory-service/api/v1/inventories").build();
     }
 
     @Override

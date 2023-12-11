@@ -285,3 +285,44 @@ todos los demás microservicios.
 En la interfaz web de `Eureka Server` vemos las instancias de todos los microservicios registrados:
 
 ![Register Clients In Eureka Server](./assets/01.eureka-server-register-clients.png)
+
+## Modificando routes para usar Load Balancer
+
+Ahora que estamos usando `Eureka Server` y hemos configurado las aplicaciones clientes con `Eureka Client` debemos
+modificar la configuración del `application.yml`. Actualmente, las rutas las estamos definiendo en código duro, es
+decir, por ejemplo para la primera ruta está definida de esta manera: `uri: http://localhost:8083`, debemos modificarlo
+para que ahora se pueda utilizar el `load balancer`. Esto significa que, podemos tener un microservicio con múltiples
+instancias, por lo que utilizar `load balancer` entre esas múltiples instancias del servicio registrado en el eureka
+server, ayudará a lograr un enrutamiento dinámico y equilibrado de la carga.
+
+Entonces, para lograr el `load balancer` debemos modificar la uri de las routes, tal como se muestra a continuación:
+
+````yml
+spring:
+  cloud:
+    gateway:
+      routes:
+        # Inventory service routes
+        - id: inventory-service-route
+          uri: lb://inventory-service #<--- Antes: http://localhost:8083
+          predicates:
+            - Path=/api/v1/inventories/**
+
+        # Order service routes
+        - id: orders-service-route
+          uri: lb://orders-service    #<--- Antes: http://localhost:8082
+          predicates:
+            - Path=/api/v1/orders/**
+
+        # Product service routes
+        - id: products-service-route
+          uri: lb://products-service  #<--- Antes: http://localhost:8081
+          predicates:
+            - Path=/api/v1/products/**
+````
+
+**DONDE**
+
+- `uri: lb://inventory-service`, el `lb` indica que se aplicará `load balancer` y el `inventory-service` es el nombre
+  del microservicio al que apunta. Ese nombre está definido en la configuración `spring.application.name` de dicho
+  microservicio (lo mismo para las otras rutas).

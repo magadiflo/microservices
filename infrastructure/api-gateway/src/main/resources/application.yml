@@ -10,19 +10,19 @@ spring:
       routes:
         # Inventory service routes
         - id: inventory-service-route
-          uri: http://localhost:8083
+          uri: lb://inventory-service
           predicates:
             - Path=/api/v1/inventories/**
 
         # Order service routes
         - id: orders-service-route
-          uri: http://localhost:8082
+          uri: lb://orders-service
           predicates:
             - Path=/api/v1/orders/**
 
         # Product service routes
         - id: products-service-route
-          uri: http://localhost:8081
+          uri: lb://products-service
           predicates:
             - Path=/api/v1/products/**
 
