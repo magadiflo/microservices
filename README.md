@@ -204,3 +204,56 @@ Ahora definiremos usuarios, roles y configuraremos una aplicación cliente:
 
 ![client](./assets/11.client.png)
 
+## Agregando nuevas dependencias
+
+Recordemos que estamos trabajando con un proyecto multi-módulo de maven, por lo tanto las dependencias están
+organizadas. Pero, por tema de documentación mostraré aquí las dependencias que se agregaron en cada microservicio:
+
+- Microservicio `api-gateway`:
+
+````xml
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-oauth2-client</artifactId>
+    </dependency>
+</dependencies>
+````
+
+- Microservicio `discovery-server`:
+
+````xml
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+</dependencies>
+````
+
+- A todos los microservicios de dominio:
+
+````xml
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+</dependencies>
+````
+
