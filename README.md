@@ -178,3 +178,29 @@ Accedemos a `keycloack` a través del navegador web `http://localhost:8181/` y n
 
 ![keycloak](./assets/06.keycloak.png)
 
+## Configurando Keycloak
+
+Dentro del dashboard de `keycloak` empezaremos creando un `realm`. En keycloak un real es una especie de contenedor
+lógico para agrupar usuarios, aplicaciones y configuraciones relacionadas con la seguridad permitiendo una gestión y
+separación efectiva de los diferentes componentes del sistema de autenticación y autorización. Un `dominio (realm)`
+gestiona un conjunto de usuarios, credenciales, roles y grupos. Un usuario pertenece a un `dominio` y se registra en él.
+Los `dominios` están aislados entre sí y solo pueden gestionar y autenticar a los usuarios que controlan.
+
+![creando un realm](./assets/07.creando-realm.png)
+
+Ahora definiremos usuarios, roles y configuraremos una aplicación cliente:
+
+### Roles
+
+![realm-roles](./assets/08.realm-roles.png)
+
+### Usuario Admin y Basic
+
+![admin user](./assets/09.admin-user.png)
+
+![basic user](./assets/10.basic-user.png)
+
+### Aplicación Cliente
+
+![client](./assets/11.client.png)
+
