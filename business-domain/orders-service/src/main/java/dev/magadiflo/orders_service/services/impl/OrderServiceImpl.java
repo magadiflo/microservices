@@ -20,11 +20,9 @@ public class OrderServiceImpl implements IOrderService {
     private final IOrderRepository orderRepository;
     private final RestClient restClient;
 
-    public OrderServiceImpl(IOrderRepository orderRepository) {
+    public OrderServiceImpl(IOrderRepository orderRepository, RestClient.Builder restClientBuilder) {
         this.orderRepository = orderRepository;
-        this.restClient = RestClient.builder()
-                .baseUrl("http://localhost:8083/api/v1/inventories")
-                .build();
+        this.restClient = restClientBuilder.baseUrl("lb://inventory-service/api/v1/inventories").build();
     }
 
     @Override
