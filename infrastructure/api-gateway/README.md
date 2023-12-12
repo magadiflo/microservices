@@ -503,3 +503,45 @@ los tres microservicios de dominio: **products-service, orders-service e invento
 una mejor comprensión.
 
 ![Configurando IntelliJ IDEA](./assets/02.configurando-intellij-idea.png)
+
+## Ejecutando múltiples instancias
+
+Ejecutaremos todos los microservicios, pero para el tema de las múltiples instancias trabajaremos con el microservicio
+`orders-service`, es decir, utilizando `IntelliJ IDEA` ejecutaremos dos instancias adicionales de dicho microservicio.
+Veamos cómo tendríamos los microservicios registrados en eureka server:
+
+![múltiples instancias](./assets/03.instancias-registradas-en-eureka-server.png)
+
+Los puertos aleatorios asignados a cada instancia del microservicio orders-service son:
+
+- 53322
+- 53232
+- 53343
+
+Ahora, ejecutaremos **TRES VECES** la petición a través del `api-gateway` al microservicio `orders-service`:
+
+````bash
+$ curl -v -X POST -H "Content-Type: application/json" -d "{\"items\": [{\"sku\": \"000001\", \"price\": 1.50, \"quantity\": 8}]}" http://localhost:8080/api/v1/orders
+
+>
+< HTTP/1.1 201 Created
+< Content-Type: text/plain;charset=UTF-8
+<
+Order placed successfully
+````
+
+Podemos observar que las peticiones se realizan correctamente. Ahora vayamos al log del microservicio `api-gateway` y
+veamos qué instancias de las 3 generadas son usadas en cada petición:
+
+````bash
+[1] LoadBalancerClientFilter url chosen: http://localhost:53322/api/v1/orders
+[2] LoadBalancerClientFilter url chosen: http://localhost:53343/api/v1/orders
+[3] LoadBalancerClientFilter url chosen: http://localhost:53232/api/v1/orders
+````
+
+Como observamos se está ejecutando de manera equitativa una instancia distinta en cada petición, eso ocurre porque
+`Spring Cloud Gateway` usa por defecto el algoritmo `Round Robin`.
+
+De esta manera queda demostrado que nuestras configuraciones y sobre todo las múltiples instancias generadas están
+funcionando correctamente.
+
