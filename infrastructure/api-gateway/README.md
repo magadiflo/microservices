@@ -465,3 +465,30 @@ $ curl -v http://localhost:8080/api/v1/inventories/000002 | jq
 <
 true
 ````
+
+## Configurando microservicios para crear múltiples instancias
+
+Para crear múltiples instancias de un microservicio es necesario cambiar el puerto que definimos a cada microservicio
+cliente de eureka con excepción del microservicio `api-gateway`, ya que tendremos una única instancia de ese
+microservicio y además tendremos fijo su puerto `8080`. Con respecto a los otros microservicios clientes de eureka
+`(products-service, orders-service e inventory-service)` sus puertos tendrán en `valor de 0 (cero)` para que cuando
+levantemos las instancias, estas `se levanten en un puerto aleatorio.`
+
+Entonces, las modificaciones que haremos en los microservicios mencionados será como se muestra a continuación:
+
+````yaml
+server:
+  port: 0 # Cero (0) indica que el puerto será generado de manera aleatorio al levantar el microservicio
+````
+
+Finalmente, para ver cómo es que trabaja el `api-gateway` al seleccionar una instancia de las múltiples existentes
+vamos a agregar la siguente configuración en `application.yml`:
+
+````yml
+# Log
+logging:
+  level:
+    root: info
+    org.springframework.cloud.gateway: trace
+    org.springframework.cloud.gateway.route.RouteDefinitionRouteLocator: info
+````
