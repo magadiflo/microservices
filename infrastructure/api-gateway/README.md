@@ -492,3 +492,14 @@ logging:
     org.springframework.cloud.gateway: trace
     org.springframework.cloud.gateway.route.RouteDefinitionRouteLocator: info
 ````
+
+## Configurando IntelliJ IDEA para ejecutar múltiples instancias
+
+Para ejecutar múltiples instancias usando `intelliJ IDEA`, debemos tener definido los puertos de los microservicios
+que queremos generar múltiples instancias con valor 0 (ya lo hicimos en el apartado anterior). Luego, vamos a
+`Edit Configurations...`, seleccionamos en la parte izquierda la configuración que queremos agregar múltiples
+instancias, damos click en `Modify options` y seleccionamos `Allow multiple instances`. Esta configuración la hice en
+los tres microservicios de dominio: **products-service, orders-service e inventory-service.** Veamos la imagen para
+una mejor comprensión.
+
+![Configurando IntelliJ IDEA](./assets/02.configurando-intellij-idea.png)
