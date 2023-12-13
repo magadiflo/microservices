@@ -26,6 +26,40 @@ spring:
           predicates:
             - Path=/api/v1/products/**
 
+        # Discovery Server routes
+        - id: discovery-service-route
+          uri: http://localhost:8761
+          predicates:
+            - Path=/eureka/web
+          filters:
+            - SetPath=/
+
+        # Discovery Server Static routes
+        - id: discovery-service-static-route
+          uri: http://localhost:8761
+          predicates:
+            - Path=/eureka/**
+
+      default-filters:
+        - SaveSession
+        - TokenRelay
+
+  # Keycloak
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            scope: openid
+            client-id: microservices_client
+            client-secret: HAVz0radwfOEsapxT5e8GdvckcOlFgD6
+            authorization-grant-type: authorization_code
+            redirect-uri: { baseUrl }/login/oauth2/code/keycloak
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8181/realms/microservices-realm
+
 # Eureka client
 eureka:
   instance:
@@ -34,7 +68,7 @@ eureka:
 
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://eureka:password@localhost:8761/eureka/
 
 # Log
 logging:

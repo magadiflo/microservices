@@ -257,3 +257,107 @@ organizadas. Pero, por tema de documentación mostraré aquí las dependencias q
 </dependencies>
 ````
 
+## Configurando usuario y password en discovery-server
+
+Agregaremos las configuraciones en el microservicio `discovery-server` como el usuario y contraseña para un usuario de
+spring security. Estas credenciales deberán ser enviadas por los demás microservicios que intenten comunicarse con
+`Eureka Server`.
+
+````yml
+spring:
+  security:
+    user:
+      name: eureka
+      password: password
+
+logging:
+  level:
+    org.springframework.web: debug
+    org.springframework.security: debug
+````
+
+## Agregando configuraciones en los microservicios
+
+A continuación se muestran solo las configuraciones agregadas o modificadas de cada microservicios:
+
+- Microservicio `discovery-server`:
+
+````yml
+spring:
+  security:
+    user:
+      name: eureka
+      password: password
+
+logging:
+  level:
+    org.springframework.web: debug
+    org.springframework.security: debug
+````
+
+- Microservicio `api-gateway`:
+
+````yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        # Other routes
+
+        # Discovery Server routes
+        - id: discovery-service-route
+          uri: http://localhost:8761
+          predicates:
+            - Path=/eureka/web
+          filters:
+            - SetPath=/
+
+        # Discovery Server Static routes
+        - id: discovery-service-static-route
+          uri: http://localhost:8761
+          predicates:
+            - Path=/eureka/**
+      # Filtros para definir el comportamiento de enrutamiento y
+      # manipulación de sesiones y tokens de autenticación
+      default-filters:
+        - SaveSession
+        - TokenRelay
+
+  # Keycloak
+  # El issuer-uri, se utiliza para verificar la validez de los tokens emitidos por
+  # keycloak y garantiza que venga de una fuente confiable
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            scope: openid
+            client-id: microservices_client
+            client-secret: HAVz0radwfOEsapxT5e8GdvckcOlFgD6
+            authorization-grant-type: authorization_code
+            redirect-uri: { baseUrl }/login/oauth2/code/keycloak
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8181/realms/microservices-realm
+
+# Eureka client
+eureka:
+  instance:
+  client:
+    service-url:
+      defaultZone: http://eureka:password@localhost:8761/eureka/ #<-- Enviamos usuario y password que espera recibir el servidor de eureka
+````
+
+- Microservicios de dominio: products, orders, inventory
+
+````yaml
+spring:
+  # Keycloak
+  # jwk-set-uri, usada por el servidor de recursos para validar la autenticidad e integridad de los tokens
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8181/realms/microservices-realm/protocol/openid-connect/certs
+````
