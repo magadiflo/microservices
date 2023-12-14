@@ -453,3 +453,47 @@ Nos loguearemos con las credenciales del usuario que registramos en keycloak:
 Finalmente, como las credenciales son correctas somos redirigidos al end point de productos:
 
 ![login success](./assets/14.login-success.png)
+
+## Probando seguridad de microservicios con Postman
+
+En este apartado realizaremos una petición al endpoint `http://localhost:8080/api/v1/products` desde postman, pero
+como nuestro backend ya está segurizado necesitamos realizar ciertas configuraciones al postman
+
+![postman config](./assets/15.postman-config.png)
+
+![postman config](./assets/16.postman-config-2.png)
+
+**DONDE**
+
+- `Token Name`, le damos un nombre cualquiera.
+- `Callback URL` es `http://localhost:8080/login/oauth2/code/keycloak`
+- `Auth URL` es `http://localhost:8181/realms/microservices-realm/protocol/openid-connect/auth`
+- `Access Token URL` es `http://localhost:8181/realms/microservices-realm/protocol/openid-connect/token`
+
+Las url mostradas las obtuve del mismo keycloak, para eso debemos ir dentro del keycloak y en el apartado de
+`Realm settings` podemos encontrar un enlace llamado `OpenID Endpoint Configuration` que nos llevará a la siguiente url
+`http://localhost:8181/realms/microservices-realm/.well-known/openid-configuration`.
+
+Ahora, en Postman, en la parte inferior derecha hay una opción llamada `Cookies`, allí la abrimos y agregamos en
+Manage Cookies un dominio `localhost`
+
+![cookie postman](./assets/17.cookies-postman.png)
+
+En la pestaña `Sync Cookies` nos pedirá que instalemos una extensión llamada `interceptor`. Lo instalamos en el
+navegador y damos check en `Allow in InPrivate`:
+
+![interceptor](./assets/18.interceptor.png)
+
+Luego, regresamos a postman y damos click en el botón `Start Syncing`:
+
+![sync-cookies](./assets/19.sync-cookies.png)
+
+Listos, ahora sí cerramos la ventana de las coockies y damos click en el botón `Get New Access Token`. Se nos abrirá una
+ventana del postman con el login de keycloak para loguearnos:
+
+![login postman](./assets/20.login-postman.png)
+
+Le damos click en `Use Token` y ahora sí podemos hacer la petición al microservicios ya que fuimos logueados
+correctamente con keycloak:
+
+![success](./assets/22.success.png)
