@@ -810,3 +810,12 @@ el estado del endpoint vuelve a estar en `CLOSED` (luego de cierta cantidad de l
 
 ![closed](./assets/30.closed.png)
 
+---
+
+# Apache Kafka
+
+En este apartado trabajaremos con un módulo nuevo `Notificaciones`. Cuando creemos una orden notificaremos al módulo
+`notification microservices` para ver qué acciones podemos tomar (enviar email, mensaje de texto, registrar log, etc.).
+
+![kafka microservices](./assets/31.kafka-microservicios.png)
+
