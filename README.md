@@ -497,3 +497,52 @@ Le damos click en `Use Token` y ahora sí podemos hacer la petición al microser
 correctamente con keycloak:
 
 ![success](./assets/22.success.png)
+
+## Propagando Bearer Token entre Microservicios
+
+Recordemos que cuando registramos una orden en nuestro microservicio `orders-service`, internamente hace una petición al
+microservicio `inventory-service` para ver si hay stock de los productos que se desean registrar. Ahora, como el
+microservicio de  `inventory-service` también está segurizado necesitamos enviarle el `Token` de autenticación sino la
+petición interna va a fallar.
+
+Como estamos usando `RestClient`, una forma de propagar el token es usando inteceptores. Esta forma de propagar lo
+obtuve de la documentación
+oficial [RestTemplate support](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/bearer-tokens.html)
+y lo adapté al RestClient:
+
+````java
+
+@Configuration
+public class RestClientConfig {
+    @LoadBalanced
+    @Bean
+    RestClient.Builder restClientBuilder() {
+        return RestClient.builder().requestInterceptors(clientHttpRequestInterceptors -> {
+            clientHttpRequestInterceptors.add((request, body, execution) -> {
+                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                if (authentication == null) {
+                    return execution.execute(request, body);
+                }
+
+                if (!(authentication.getCredentials() instanceof AbstractOAuth2Token)) {
+                    return execution.execute(request, body);
+                }
+
+                AbstractOAuth2Token token = (AbstractOAuth2Token) authentication.getCredentials();
+                request.getHeaders().setBearerAuth(token.getTokenValue());
+                return execution.execute(request, body);
+            });
+        });
+    }
+}
+````
+
+## Verificando propagación de token
+
+Para verificar que el token se está propagando entre los microservicios vamos a realizar una petición desde postman
+para poder registrar una orden, obviamente debemos primero generar el token usando keycloak. Observamos cómo es que la
+petición llega al microservicio `inventory-service`, eso significa que la autenticación fue exitosa y luego completó el
+flujo correctamente.
+
+![propagando token](./assets/23.propagando-token.png)
+
