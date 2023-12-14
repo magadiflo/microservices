@@ -336,7 +336,7 @@ spring:
             client-id: microservices_client
             client-secret: HAVz0radwfOEsapxT5e8GdvckcOlFgD6
             authorization-grant-type: authorization_code
-            redirect-uri: { baseUrl }/login/oauth2/code/keycloak
+            redirect-uri: http://localhost:8080/login/oauth2/code/keycloak
         provider:
           keycloak:
             issuer-uri: http://localhost:8181/realms/microservices-realm
@@ -360,4 +360,80 @@ spring:
       resourceserver:
         jwt:
           jwk-set-uri: http://localhost:8181/realms/microservices-realm/protocol/openid-connect/certs
+````
+
+## Agregando filtro de seguridad personalizada en los microservicios
+
+Vamos a agregar configuraciones de seguridad a todos los microservicios:
+
+- Microservicio `api-gateway`
+
+````java
+
+@Configuration
+public class SecurityConfig {
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) throws Exception {
+        http.csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .authorizeExchange(authorize -> authorize.anyExchange().authenticated())
+                .oauth2Login(Customizer.withDefaults());
+        return http.build();
+    }
+}
+````
+
+- Microservicio `discovery-server`:
+
+````java
+
+@Configuration
+public class SecurityConfig {
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http.csrf(AbstractHttpConfigurer::disable);
+        return http.build();
+    }
+}
+````
+
+- La siguiente configuración será agregada a los microservicios de
+  dominio: `products-service, orders-service, inventory-service`:
+
+````java
+@EnableWebSecurity
+@Configuration
+public class SecurityConfig {
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http.csrf(AbstractHttpConfigurer::disable)
+                .securityMatcher("/**").authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+                .oauth2ResourceServer(configure -> configure.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter())));
+
+        return http.build();
+    }
+
+    //Convertir los roles de keycloak en una representación compatible con spring security
+    private Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(new KeycloakRealmRoleConverter());
+
+        return converter;
+    }
+}
+
+@SuppressWarnings("unchecked")
+class KeycloakRealmRoleConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
+
+    @Override
+    public Collection<GrantedAuthority> convert(Jwt jwt) {
+        if (jwt.getClaims() == null) {
+            return List.of();
+        }
+        final Map<String, List<String>> realmAccess = (Map<String, List<String>>) jwt.getClaims().get("realm_access");
+        return realmAccess.get("roles").stream()
+                .map(roleName -> "ROLE_" + roleName)
+                .map(SimpleGrantedAuthority::new)
+                .collect(Collectors.toList());
+    }
+}
 ````
