@@ -400,6 +400,7 @@ public class SecurityConfig {
   dominio: `products-service, orders-service, inventory-service`:
 
 ````java
+
 @EnableWebSecurity
 @Configuration
 public class SecurityConfig {
@@ -437,3 +438,18 @@ class KeycloakRealmRoleConverter implements Converter<Jwt, Collection<GrantedAut
     }
 }
 ````
+
+## Probando seguridad de microservicios
+
+Accedemos a la url `http://localhost:8080/api/v1/products` para ver la lista de productos pero como realizamos las
+configuraciones de seguridad en el apartado anterior seremos redireccionados al `login de keycloak`:
+
+![login keycloak](./assets/12.login-keycloak.png)
+
+Nos loguearemos con las credenciales del usuario que registramos en keycloak:
+
+![credentials](./assets/13.login-credentials.png)
+
+Finalmente, como las credenciales son correctas somos redirigidos al end point de productos:
+
+![login success](./assets/14.login-success.png)
