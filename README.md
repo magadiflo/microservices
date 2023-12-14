@@ -774,3 +774,39 @@ management:
         include: health
       base-path: /actuator
 ````
+
+## Probando la resiliencia y tolerancia a fallos
+
+Probaremos el método para registrar una orden, ya que internamente ese método hace una llamada al microservicio de
+inventarios. Por lo tanto, cuando falle el microservicio de inventarios, lo que debe retornar sería el método
+fallback `placeOrderFallback(...)` que definimos en el controlador `OrderController`.
+
+Veamos cómo está el estado actual de ese endpoint que anotamos con `@CircuitBreaker(..)`
+
+![orders health](./assets/24.orders-health-init.png)
+
+Ahora, detendremos el microservicio `inventory-service` y realizaremos una petición al endpoint para agregar una orden.
+Lo que debería pasar es que el endpoint debe fallar y en ese caso retornar el método fallback con un error de
+estado `HttpStatus.SERVICE_UNAVAILABLE`:
+
+![fail service](./assets/25.fail-service.png)
+
+Veamos que el estado del endpoint aumentó el 1 el `failedCalls` y el `bufferedCalls`:
+
+![orders health](./assets/26.orders-health-first.png)
+
+Después de 5 llamadas con falla, vemos que el estado pasa a `OPEN`, el circuito se abre:
+
+![open](./assets/27.change-status.png)
+
+Después de `10s` (tiempo que definimos en el `application.yml` del `orders-service`) pasa al estado de `HALF_OPEN`:
+
+![half_open](./assets/28.half-open.png)
+
+Ahora, levantaremos el microservicio `inventory-service` y veremos que las llamadas vuelven a ocurrir con normalidad y
+el estado del endpoint vuelve a estar en `CLOSED` (luego de cierta cantidad de llamadas exitosas):
+
+![request success](./assets/29.request-success.png)
+
+![closed](./assets/30.closed.png)
+
