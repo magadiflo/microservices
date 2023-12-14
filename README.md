@@ -546,3 +546,48 @@ flujo correctamente.
 
 ![propagando token](./assets/23.propagando-token.png)
 
+## Limitando el acceso a recursos basado en roles
+
+Para utilizar los roles en los endpoints necesitamos habilitar el uso de la anotación `@PreAuthorize` eso lo conseguimos
+agregando la anotación `@EnableMethodSecurity` en el SecurityContext del microservicio `products-service`:
+
+````java
+
+@EnableMethodSecurity
+@EnableWebSecurity
+@Configuration
+public class SecurityConfig {
+    /* other codes */
+}
+````
+
+Luego agregamos la anotación `@PreAuthorize` en los endpoints a segurizar:
+
+````java
+
+@RequiredArgsConstructor
+@RestController
+@RequestMapping(path = "/api/v1/products")
+public class ProductController {
+
+    private final IProductService productService;
+
+    @PreAuthorize("hasRole('USER')")
+    @GetMapping
+    public ResponseEntity<List<ProductResponse>> getAllProducts() {
+        return ResponseEntity.ok(this.productService.getAllProducts());
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public void addProduct(@RequestBody ProductRequest productRequest) {
+        this.productService.addProduct(productRequest);
+    }
+
+}
+````
+
+Listo, de esa manera solo los usuarios con rol `ADMIN` podrán registrar un producto y los usuarios con rol `USER` podrán
+listar los productos.
+
