@@ -26,6 +26,58 @@ spring:
           predicates:
             - Path=/api/v1/products/**
 
+        # Discovery Server routes
+        - id: discovery-service-route
+          uri: http://localhost:8761
+          predicates:
+            - Path=/eureka/web
+          filters:
+            - SetPath=/
+
+        # Discovery Server Static routes
+        - id: discovery-service-static-route
+          uri: http://localhost:8761
+          predicates:
+            - Path=/eureka/**
+
+        # Inventory actuator routes
+        - id: inventory-service-actuator-route
+          uri: lb://inventory-service/actuator/inventory/**
+          predicates:
+            - Path=/actuator/inventory/**
+
+        # Orders actuator routes
+        - id: orders-service-actuator-route
+          uri: lb://orders-service/actuator/orders/**
+          predicates:
+            - Path=/actuator/orders/**
+
+        # Products actuator routes
+        - id: products-service-actuator-route
+          uri: lb://products-service/actuator/products/**
+          predicates:
+            - Path=/actuator/products/**
+
+      default-filters:
+        - SaveSession
+        - TokenRelay
+
+  # Keycloak
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            scope: openid
+            client-id: microservices_client
+            client-secret: HAVz0radwfOEsapxT5e8GdvckcOlFgD6
+            authorization-grant-type: authorization_code
+            redirect-uri: http://localhost:8080/login/oauth2/code/keycloak
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8181/realms/microservices-realm
+
 # Eureka client
 eureka:
   instance:
@@ -34,7 +86,7 @@ eureka:
 
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://eureka:password@localhost:8761/eureka/
 
 # Log
 logging:
@@ -42,3 +94,11 @@ logging:
     root: info
     org.springframework.cloud.gateway: trace
     org.springframework.cloud.gateway.route.RouteDefinitionRouteLocator: info
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      base-path: /actuator

@@ -5,6 +5,11 @@ spring:
   application:
     name: discovery-service
 
+  security:
+    user:
+      name: eureka
+      password: password
+
 eureka:
   instance:
     hostname: localhost
@@ -15,3 +20,8 @@ eureka:
     fetch-registry: false
     service-url:
       defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+
+logging:
+  level:
+    org.springframework.web: debug
+    org.springframework.security: debug

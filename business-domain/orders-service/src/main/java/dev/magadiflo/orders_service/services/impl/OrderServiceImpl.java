@@ -32,7 +32,7 @@ public class OrderServiceImpl implements IOrderService {
 
     @Override
     @Transactional
-    public void placeOrder(OrderRequest orderRequest) {
+    public OrderResponse placeOrder(OrderRequest orderRequest) {
         // Check for inventory
         BaseResponse response = this.restClient.post()
                 .uri("/in-stock")
@@ -46,6 +46,6 @@ public class OrderServiceImpl implements IOrderService {
         }
 
         Order order = OrderMapper.mapToOrder(orderRequest);
-        this.orderRepository.save(order);
+        return OrderMapper.mapToOrderResponse(this.orderRepository.save(order));
     }
 }
