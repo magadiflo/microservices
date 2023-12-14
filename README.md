@@ -591,3 +591,186 @@ public class ProductController {
 Listo, de esa manera solo los usuarios con rol `ADMIN` podrán registrar un producto y los usuarios con rol `USER` podrán
 listar los productos.
 
+---
+
+# Resiliencia y tolerancia a fallos
+
+Para mostrar el funcionamiento de la tolerancia a fallos con `resilience4j` vamos a trabajar con el microservicio de
+`orders-service`, con su endpoint para realizar una orden. Trabajaremos con ese método porque se comunica internamente
+con el microservicio `inventory-service` para verificar si hay stock de los productos que se desean agregar. Entonces,
+el punto clave está en `¿qué pasa si el microservicio inventory-service está caído?` tenemos que ver cómo tolerar ese
+fallo, es decir, saber responder ante la caída de un microservicio y es ahí donde entra en juego el `circuit-breaker` de
+`Resilience4j`.
+
+Para poder trabajar con `resilience4j` necesitamos agregar la dependencia en el `pom.xml` del microservicio principal,
+es decir, el microservicio que hace la llamada interna a otro microservicio, en nuestro caso es el `orders-service`.
+
+````xml
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+    </dependency>
+</dependencies>
+````
+
+Luego modificaremos el servicio para retornar un `OrderResponse`:
+
+````java
+
+@Service
+public class OrderServiceImpl implements IOrderService {
+    /* other metods */
+    @Override
+    @Transactional
+    public OrderResponse placeOrder(OrderRequest orderRequest) {
+        // Check for inventory
+        BaseResponse response = this.restClient.post()
+                .uri("/in-stock")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(orderRequest.items())
+                .retrieve()
+                .body(BaseResponse.class);
+
+        if (response == null || response.hasErrors()) {
+            throw new IllegalArgumentException("Some of products are not in stock");
+        }
+
+        Order order = OrderMapper.mapToOrder(orderRequest);
+        return OrderMapper.mapToOrderResponse(this.orderRepository.save(order));
+    }
+}
+````
+
+Como observamos en el método anterior, ese es el que hace la llamada al microservicio `inventory-service`, precisamente
+esa llamada nos permitirá observar el comportamiento del `Circuit Breaker` cuando la llamada falle.
+
+También modificamos el controlador `OrderController` quien no solamente retornará un `OrderResponse` sino al que lo
+anotaremos con `@CircuitBreaker(...)` de `resilience4j`. Esto nos permitirá manejar los errores que se produzcan en ese
+endpoint.
+
+````java
+
+@Slf4j
+@RequiredArgsConstructor
+@RestController
+@RequestMapping(path = "/api/v1/orders")
+public class OrderController {
+    /* others codes */
+    @CircuitBreaker(name = "orders-service", fallbackMethod = "placeOrderFallback")
+    @PostMapping
+    public ResponseEntity<OrderResponse> placeOrder(@RequestBody OrderRequest orderRequest) {
+        OrderResponse orderResponse = this.orderService.placeOrder(orderRequest);
+        return ResponseEntity.status(HttpStatus.CREATED).body(orderResponse);
+    }
+
+    private ResponseEntity<OrderResponse> placeOrderFallback(OrderRequest orderRequest, Throwable throwable) {
+        log.info("Llamando al fallbackMethod placeOrderFallback(...)");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+    }
+}
+````
+
+Como se observa, tenemos nuestro endpoint `placeOrder` que tiene la anotación `@CircuitBreaker`, el
+`name = "orders-service"` es el nombre de la propiedad que definiremos más adelante en el `application.yml`, mientras
+que la propiedad `fallbackMethod = "placeOrderFallback"` hace referencia al método `placeOrderFallback(...)` que
+definimos en la parte inferior. Este último método se llamará cuando el endpoint falle, entonces como requisito el
+método a llamar debe tener la misma firma que el método que está anotado con `@CircuitBreaker`.
+
+Finalmente, en el `application.yml` del microservicio `orders-service` agregamos la configuración del `Actuator` y del
+`Resilience4j`. (NOTA: El Actuator nos permitirá ver detalles de nuestro microservicio como la salud, el estado, etc.)
+
+````yaml
+# Other configurations
+#
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      base-path: /actuator/orders
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
+
+# Resilience4j - Circuit Breaker
+resilience4j.circuitbreaker:
+  instances:
+    orders-service:
+      register-health-indicator: true
+      sliding-window-size: 5
+      sliding-window-type: count_based
+      failure-rate-threshold: 50
+      wait-duration-in-open-state: 10s
+      automatic-transition-from-open-to-half-open-enabled: true
+      permitted-number-of-calls-in-half-open-state: 3
+````
+
+Aprovechamos y agregamos la configuración de `Actuator` al `application.properties` de los microservicios de productos e
+inventarios:
+
+- Microservicio `products-service`:
+
+````yaml
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      base-path: /actuator/products
+````
+
+- Microservicio `inventory-service`:
+
+````yaml
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      base-path: /actuator/inventory
+````
+
+Finalmente, en el `application.yml` del microservicio `api-gateway` debemos configurar las rutas a los endpoints del
+actuator que está en cada microservicio y por supuesto el propio actuator del api gateway:
+
+````yml
+spring:
+  cloud:
+    gateway:
+      routes:
+        # Others routes
+        #
+        # Inventory actuator routes
+        - id: inventory-service-actuator-route
+          uri: lb://inventory-service/actuator/inventory/**
+          predicates:
+            - Path=/actuator/inventory/**
+
+        # Orders actuator routes
+        - id: orders-service-actuator-route
+          uri: lb://orders-service/actuator/orders/**
+          predicates:
+            - Path=/actuator/orders/**
+
+        # Products actuator routes
+        - id: products-service-actuator-route
+          uri: lb://products-service/actuator/products/**
+          predicates:
+            - Path=/actuator/products/**
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      base-path: /actuator
+````
