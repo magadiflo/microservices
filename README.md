@@ -1133,3 +1133,27 @@ services:
     ports:
       - 9411:9411
 ````
+
+## Dependencias
+
+En el `pom.xml` del microservicio `api-gateway` y de los microservicios de dominio agregaré las siguientes
+dependencias:
+
+````xml
+
+<dependencies>
+    <!--Tracing-->
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-tracing-bridge-brave</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.zipkin.reporter2</groupId>
+        <artifactId>zipkin-reporter-brave</artifactId>
+    </dependency>
+</dependencies>
+````
