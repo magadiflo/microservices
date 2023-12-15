@@ -877,3 +877,133 @@ cad2c035fb75   postgres:15.2-alpine               "docker-entrypoint.s…"   2 d
 180c531d27e9   postgres:15.2-alpine               "docker-entrypoint.s…"   7 days ago      Up 7 minutes   5433/tcp, 0.0.0.0:5433->5432/tcp              db-inventory
 d6714776dc2e   mysql:8.0.33                       "docker-entrypoint.s…"   7 days ago      Up 7 minutes   3307/tcp, 33060/tcp, 0.0.0.0:3307->3306/tcp   db-orders
 ````
+
+## Producer: Microservicio orders-service
+
+Nuestro producto de mensajes será el microservicio `orders-service`, por lo tanto necesitamos agregar la dependencia de
+apache kafka en su `pom.xml`:
+
+````xml
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.kafka</groupId>
+        <artifactId>spring-kafka</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.kafka</groupId>
+        <artifactId>spring-kafka-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+````
+
+En su `application.yml` agregamos la configuración que usará el microservicio como productor. En él definimos que
+usaremos como key de la serialización un tipo String y el valor que enviaremos también será del tipo String.
+
+````yaml
+spring:
+  # Kafka
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      retries: 1
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+````
+
+Antes de continuar con la implementación del productor de kafka, necesitamos crear clases, records y enums que usaremos:
+
+````java
+// Objeto que será convertido en un string y enviado a kafka
+public record OrderEvent(String orderNumber, int itemsCount, OrderStatus orderStatus) {
+}
+````
+
+````java
+// Necesario para poblar el OrderEvent
+public enum OrderStatus {
+    PLACED,
+    CANCELLED,
+    SHIPPED,
+    DELIVERED
+}
+````
+
+````java
+// Nos permitirá convertir un objeto en un String con formato JSON y un String con formato JSON a un objeto.
+public class JsonMapper {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    public static String toJson(Object object) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(object);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static <T> T fromJson(String json, Class<T> clazz) {
+        try {
+            return OBJECT_MAPPER.readValue(json, clazz);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+````
+
+Una vez definido los elementos necesarios para construir el productor llega el momento de implementar el código que
+se encargará de enviar el mensaje a Kafka:
+
+````java
+
+@Service
+public class OrderServiceImpl implements IOrderService {
+
+    private final IOrderRepository orderRepository;
+    private final RestClient restClient;
+    private final KafkaTemplate<String, String> kafkaTemplate;
+
+    public OrderServiceImpl(IOrderRepository orderRepository, RestClient.Builder restClientBuilder,
+                            KafkaTemplate<String, String> kafkaTemplate) {
+        this.orderRepository = orderRepository;
+        this.restClient = restClientBuilder.baseUrl("lb://inventory-service/api/v1/inventories").build();
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getAllOrders() {
+        return this.orderRepository.findAll().stream().map(OrderMapper::mapToOrderResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse placeOrder(OrderRequest orderRequest) {
+        // Check for inventory
+        BaseResponse response = this.restClient.post()
+                .uri("/in-stock")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(orderRequest.items())
+                .retrieve()
+                .body(BaseResponse.class);
+
+        if (response == null || response.hasErrors()) {
+            throw new IllegalArgumentException("Some of products are not in stock");
+        }
+
+        Order order = OrderMapper.mapToOrder(orderRequest);
+        Order orderDB = this.orderRepository.save(order);
+
+        //TODO: Send message to order topic
+        OrderEvent orderEvent = new OrderEvent(orderDB.getOrderNumber(), orderDB.getItems().size(), OrderStatus.PLACED);
+        this.kafkaTemplate.send("orders-topic", JsonMapper.toJson(orderEvent));
+
+        return OrderMapper.mapToOrderResponse(orderDB);
+    }
+}
+````
+
+En la clase anterior se muestra la implementación completa de la clase `OrderServiceImpl` incluyendo el envío de
+la order guardada como mensaje a Kafka.
