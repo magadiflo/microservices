@@ -1007,3 +1007,113 @@ public class OrderServiceImpl implements IOrderService {
 
 En la clase anterior se muestra la implementación completa de la clase `OrderServiceImpl` incluyendo el envío de
 la order guardada como mensaje a Kafka.
+
+## Consumer: Microservicio notifications-service
+
+Ahora implementaremos el consumidor que será el microservicio `notifications-service`.
+
+Empezaremos con el `application.yml` configurando las propiedades del consumidor de kafka y además agregaremos las
+configuraciones que hemos venido trabajando hasta ahora:
+
+````yml
+server:
+  port: 0
+
+spring:
+  application:
+    name: notifications-service
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: notifications-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+# Eureka client
+eureka:
+  instance:
+    hostname: localhost
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+
+  client:
+    service-url:
+      defaultZone: http://eureka:password@localhost:8761/eureka/
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      base-path: /actuator/notifications
+````
+
+Ahora definimos las clases, records, etc. que usaremos para implementar el consumidor de kafka:
+
+````java
+// Lo que recibamos lo transformaremos a este record
+public record OrderEvent(String orderNumber, int itemsCount, OrderStatus orderStatus) {
+}
+````
+
+````java
+// Necesario para poder crear el objeto de OrderEvent
+public enum OrderStatus {
+    PLACED,
+    CANCELLED,
+    SHIPPED,
+    DELIVERED
+}
+````
+
+````java
+// Nos permitirá hacer la conversión de un objeto a otro
+public class JsonMapper {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    public static String toJson(Object object) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(object);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static <T> T fromJson(String json, Class<T> clazz) {
+        try {
+            return OBJECT_MAPPER.readValue(json, clazz);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+````
+
+Finalmente, la clase más importante, clase que nos permitirá consumir el mensaje que el productor mande al topic de
+kafka:
+
+````java
+
+@Slf4j
+@Component
+public class OrderEventListener {
+    @KafkaListener(topics = "orders-topic")
+    public void handlerOrdersNotifications(String message) {
+        OrderEvent orderEvent = JsonMapper.fromJson(message, OrderEvent.class);
+
+        // Send email to customer, send sms to customer, etc.
+        // Notify another service...
+
+        log.info("Order {} event received for order: {} with {} items",
+                orderEvent.orderStatus(), orderEvent.orderNumber(), orderEvent.itemsCount());
+    }
+}
+````
+
+## Probando la comunicación con Kafka
+
+Como observamos, hemos realizado un registro de una orden quien está publicando dicho registro en Kafka y nuestro
+microservicio `notifications-service` lo está consumiendo tal como se ve en la siguiente imagen:
+
+![kafka consumer](./assets/33.kafka-consumer.png)
