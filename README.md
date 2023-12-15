@@ -825,3 +825,55 @@ En este apartado trabajaremos con un módulo nuevo `Notificaciones`. Cuando cree
 microservicio `notifications-service` quien será el que lo consuma.
 
 ![produces-consumer](./assets/32.producer-kafka-consumer.png)
+
+## Levantando servidor Kafka en contenedor Docker
+
+En el `compose.yml` agregaremos dos nuevos servicios: `zookeeper` y `kafka`:
+
+````yaml
+services:
+  ### Zookeeper
+  zookeeper:
+    container_name: zookeeper
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+  ### Kafka
+  kafka:
+    container_name: kafka
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+````
+
+**NOTA**
+
+> `Kafka` necesita del servidor `Zookeeper` para funcionar correctamente. Ahora, en versiones actuales de `Kafka`
+> no se necesida de `Zookeeper` pero para hacerlo más standar el desarrollo de este tutorial es que el tutor usa la
+> versión de `Kafka` con `Zookeeper`.
+
+Procedemos a levantar los servicios usando `compose` de docker:
+
+````bash
+$ docker compose up -d
+$ docker container ls -a
+CONTAINER ID   IMAGE                              COMMAND                  CREATED         STATUS         PORTS                                         NAMES
+0fc940142290   confluentinc/cp-kafka:7.4.0        "/etc/confluent/dock…"   3 minutes ago   Up 3 minutes   0.0.0.0:9092->9092/tcp                        kafka
+cbbcf5f81f8d   confluentinc/cp-zookeeper:7.4.0    "/etc/confluent/dock…"   3 minutes ago   Up 3 minutes   2181/tcp, 2888/tcp, 3888/tcp                  zookeeper
+4562356dd68f   quay.io/keycloak/keycloak:21.0.2   "/opt/keycloak/bin/k…"   2 days ago      Up 7 minutes   8181/tcp, 8443/tcp, 0.0.0.0:8181->8080/tcp    keycloak
+cad2c035fb75   postgres:15.2-alpine               "docker-entrypoint.s…"   2 days ago      Up 7 minutes   5435/tcp, 0.0.0.0:5435->5432/tcp              db-keycloak
+4cde30018af0   postgres:15.2-alpine               "docker-entrypoint.s…"   7 days ago      Up 7 minutes   5434/tcp, 0.0.0.0:5434->5432/tcp              db-products
+180c531d27e9   postgres:15.2-alpine               "docker-entrypoint.s…"   7 days ago      Up 7 minutes   5433/tcp, 0.0.0.0:5433->5432/tcp              db-inventory
+d6714776dc2e   mysql:8.0.33                       "docker-entrypoint.s…"   7 days ago      Up 7 minutes   3307/tcp, 33060/tcp, 0.0.0.0:3307->3306/tcp   db-orders
+````
