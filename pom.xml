@@ -20,6 +20,7 @@
     <modules>
         <module>business-domain</module>
         <module>infrastructure</module>
+        <module>messaging-broker</module>
     </modules>
 
     <properties>

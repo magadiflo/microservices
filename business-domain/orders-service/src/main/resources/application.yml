@@ -24,6 +24,14 @@ spring:
         jwt:
           jwk-set-uri: http://localhost:8181/realms/microservices-realm/protocol/openid-connect/certs
 
+  # Kafka
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      retries: 1
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
 logging:
   level:
     org.hibernate.SQL: debug

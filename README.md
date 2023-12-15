@@ -810,3 +810,310 @@ el estado del endpoint vuelve a estar en `CLOSED` (luego de cierta cantidad de l
 
 ![closed](./assets/30.closed.png)
 
+---
+
+# Apache Kafka
+
+En este apartado trabajaremos con un módulo nuevo `Notificaciones`. Cuando creemos una orden notificaremos al módulo
+`notification microservices` para ver qué acciones podemos tomar (enviar email, mensaje de texto, registrar log, etc.).
+
+![kafka microservices](./assets/31.kafka-microservicios.png)
+
+## Kafka: Productor y Consumidor
+
+`Kafka` será el intermediario entre nuestro microservicio `orders-service` quien será el productor de mensajes y nuestro
+microservicio `notifications-service` quien será el que lo consuma.
+
+![produces-consumer](./assets/32.producer-kafka-consumer.png)
+
+## Levantando servidor Kafka en contenedor Docker
+
+En el `compose.yml` agregaremos dos nuevos servicios: `zookeeper` y `kafka`:
+
+````yaml
+services:
+  ### Zookeeper
+  zookeeper:
+    container_name: zookeeper
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+  ### Kafka
+  kafka:
+    container_name: kafka
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+````
+
+**NOTA**
+
+> `Kafka` necesita del servidor `Zookeeper` para funcionar correctamente. Ahora, en versiones actuales de `Kafka`
+> no se necesida de `Zookeeper` pero para hacerlo más standar el desarrollo de este tutorial es que el tutor usa la
+> versión de `Kafka` con `Zookeeper`.
+
+Procedemos a levantar los servicios usando `compose` de docker:
+
+````bash
+$ docker compose up -d
+$ docker container ls -a
+CONTAINER ID   IMAGE                              COMMAND                  CREATED         STATUS         PORTS                                         NAMES
+0fc940142290   confluentinc/cp-kafka:7.4.0        "/etc/confluent/dock…"   3 minutes ago   Up 3 minutes   0.0.0.0:9092->9092/tcp                        kafka
+cbbcf5f81f8d   confluentinc/cp-zookeeper:7.4.0    "/etc/confluent/dock…"   3 minutes ago   Up 3 minutes   2181/tcp, 2888/tcp, 3888/tcp                  zookeeper
+4562356dd68f   quay.io/keycloak/keycloak:21.0.2   "/opt/keycloak/bin/k…"   2 days ago      Up 7 minutes   8181/tcp, 8443/tcp, 0.0.0.0:8181->8080/tcp    keycloak
+cad2c035fb75   postgres:15.2-alpine               "docker-entrypoint.s…"   2 days ago      Up 7 minutes   5435/tcp, 0.0.0.0:5435->5432/tcp              db-keycloak
+4cde30018af0   postgres:15.2-alpine               "docker-entrypoint.s…"   7 days ago      Up 7 minutes   5434/tcp, 0.0.0.0:5434->5432/tcp              db-products
+180c531d27e9   postgres:15.2-alpine               "docker-entrypoint.s…"   7 days ago      Up 7 minutes   5433/tcp, 0.0.0.0:5433->5432/tcp              db-inventory
+d6714776dc2e   mysql:8.0.33                       "docker-entrypoint.s…"   7 days ago      Up 7 minutes   3307/tcp, 33060/tcp, 0.0.0.0:3307->3306/tcp   db-orders
+````
+
+## Producer: Microservicio orders-service
+
+Nuestro producto de mensajes será el microservicio `orders-service`, por lo tanto necesitamos agregar la dependencia de
+apache kafka en su `pom.xml`:
+
+````xml
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.kafka</groupId>
+        <artifactId>spring-kafka</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.kafka</groupId>
+        <artifactId>spring-kafka-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+````
+
+En su `application.yml` agregamos la configuración que usará el microservicio como productor. En él definimos que
+usaremos como key de la serialización un tipo String y el valor que enviaremos también será del tipo String.
+
+````yaml
+spring:
+  # Kafka
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      retries: 1
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+````
+
+Antes de continuar con la implementación del productor de kafka, necesitamos crear clases, records y enums que usaremos:
+
+````java
+// Objeto que será convertido en un string y enviado a kafka
+public record OrderEvent(String orderNumber, int itemsCount, OrderStatus orderStatus) {
+}
+````
+
+````java
+// Necesario para poblar el OrderEvent
+public enum OrderStatus {
+    PLACED,
+    CANCELLED,
+    SHIPPED,
+    DELIVERED
+}
+````
+
+````java
+// Nos permitirá convertir un objeto en un String con formato JSON y un String con formato JSON a un objeto.
+public class JsonMapper {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    public static String toJson(Object object) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(object);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static <T> T fromJson(String json, Class<T> clazz) {
+        try {
+            return OBJECT_MAPPER.readValue(json, clazz);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+````
+
+Una vez definido los elementos necesarios para construir el productor llega el momento de implementar el código que
+se encargará de enviar el mensaje a Kafka:
+
+````java
+
+@Service
+public class OrderServiceImpl implements IOrderService {
+
+    private final IOrderRepository orderRepository;
+    private final RestClient restClient;
+    private final KafkaTemplate<String, String> kafkaTemplate;
+
+    public OrderServiceImpl(IOrderRepository orderRepository, RestClient.Builder restClientBuilder,
+                            KafkaTemplate<String, String> kafkaTemplate) {
+        this.orderRepository = orderRepository;
+        this.restClient = restClientBuilder.baseUrl("lb://inventory-service/api/v1/inventories").build();
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getAllOrders() {
+        return this.orderRepository.findAll().stream().map(OrderMapper::mapToOrderResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse placeOrder(OrderRequest orderRequest) {
+        // Check for inventory
+        BaseResponse response = this.restClient.post()
+                .uri("/in-stock")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(orderRequest.items())
+                .retrieve()
+                .body(BaseResponse.class);
+
+        if (response == null || response.hasErrors()) {
+            throw new IllegalArgumentException("Some of products are not in stock");
+        }
+
+        Order order = OrderMapper.mapToOrder(orderRequest);
+        Order orderDB = this.orderRepository.save(order);
+
+        //TODO: Send message to order topic
+        OrderEvent orderEvent = new OrderEvent(orderDB.getOrderNumber(), orderDB.getItems().size(), OrderStatus.PLACED);
+        this.kafkaTemplate.send("orders-topic", JsonMapper.toJson(orderEvent));
+
+        return OrderMapper.mapToOrderResponse(orderDB);
+    }
+}
+````
+
+En la clase anterior se muestra la implementación completa de la clase `OrderServiceImpl` incluyendo el envío de
+la order guardada como mensaje a Kafka.
+
+## Consumer: Microservicio notifications-service
+
+Ahora implementaremos el consumidor que será el microservicio `notifications-service`.
+
+Empezaremos con el `application.yml` configurando las propiedades del consumidor de kafka y además agregaremos las
+configuraciones que hemos venido trabajando hasta ahora:
+
+````yml
+server:
+  port: 0
+
+spring:
+  application:
+    name: notifications-service
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: notifications-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+# Eureka client
+eureka:
+  instance:
+    hostname: localhost
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+
+  client:
+    service-url:
+      defaultZone: http://eureka:password@localhost:8761/eureka/
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      base-path: /actuator/notifications
+````
+
+Ahora definimos las clases, records, etc. que usaremos para implementar el consumidor de kafka:
+
+````java
+// Lo que recibamos lo transformaremos a este record
+public record OrderEvent(String orderNumber, int itemsCount, OrderStatus orderStatus) {
+}
+````
+
+````java
+// Necesario para poder crear el objeto de OrderEvent
+public enum OrderStatus {
+    PLACED,
+    CANCELLED,
+    SHIPPED,
+    DELIVERED
+}
+````
+
+````java
+// Nos permitirá hacer la conversión de un objeto a otro
+public class JsonMapper {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    public static String toJson(Object object) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(object);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static <T> T fromJson(String json, Class<T> clazz) {
+        try {
+            return OBJECT_MAPPER.readValue(json, clazz);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+````
+
+Finalmente, la clase más importante, clase que nos permitirá consumir el mensaje que el productor mande al topic de
+kafka:
+
+````java
+
+@Slf4j
+@Component
+public class OrderEventListener {
+    @KafkaListener(topics = "orders-topic")
+    public void handlerOrdersNotifications(String message) {
+        OrderEvent orderEvent = JsonMapper.fromJson(message, OrderEvent.class);
+
+        // Send email to customer, send sms to customer, etc.
+        // Notify another service...
+
+        log.info("Order {} event received for order: {} with {} items",
+                orderEvent.orderStatus(), orderEvent.orderNumber(), orderEvent.itemsCount());
+    }
+}
+````
+
+## Probando la comunicación con Kafka
+
+Como observamos, hemos realizado un registro de una orden quien está publicando dicho registro en Kafka y nuestro
+microservicio `notifications-service` lo está consumiendo tal como se ve en la siguiente imagen:
+
+![kafka consumer](./assets/33.kafka-consumer.png)
