@@ -1117,3 +1117,19 @@ Como observamos, hemos realizado un registro de una orden quien está publicando
 microservicio `notifications-service` lo está consumiendo tal como se ve en la siguiente imagen:
 
 ![kafka consumer](./assets/33.kafka-consumer.png)
+
+---
+
+# Rastreo y monitoreo
+
+Trabajaremos con `Zipkin` mediante contendor de docker, para eso agregamos la imagen en el `compose.yml`:
+
+````yaml
+services:
+  ### Zipkin
+  zipkin:
+    container_name: zipkin
+    image: openzipkin/zipkin:2.24.2
+    ports:
+      - 9411:9411
+````
