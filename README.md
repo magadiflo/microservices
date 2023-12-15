@@ -819,3 +819,9 @@ En este apartado trabajaremos con un módulo nuevo `Notificaciones`. Cuando cree
 
 ![kafka microservices](./assets/31.kafka-microservicios.png)
 
+## Kafka: Productor y Consumidor
+
+`Kafka` será el intermediario entre nuestro microservicio `orders-service` quien será el productor de mensajes y nuestro
+microservicio `notifications-service` quien será el que lo consuma.
+
+![produces-consumer](./assets/32.producer-kafka-consumer.png)
