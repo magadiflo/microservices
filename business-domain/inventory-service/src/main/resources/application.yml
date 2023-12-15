@@ -25,7 +25,10 @@ spring:
           jwk-set-uri: http://localhost:8181/realms/microservices-realm/protocol/openid-connect/certs
 
 logging:
+  pattern:
+    level: '%5p [${spring.application.name}, %X{traceId:-}, %X{spanId:-}]'
   level:
+    root: debug
     org.hibernate.SQL: debug
 
 # Eureka client
@@ -45,3 +48,10 @@ management:
       exposure:
         include: health
       base-path: /actuator/inventory
+  # Tracing
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans

@@ -1157,3 +1157,27 @@ dependencias:
     </dependency>
 </dependencies>
 ````
+
+## Configurando microservicios
+
+Para el uso de `zipkin` y la configuración del patrón de `LOG` vamos a agregar la siguiente configuración en
+los `application.yml` de los siguientes microservicios: **products-service, orders-service, inventory-service,
+api-gateway y discovery-server:**
+
+````yaml
+# Log
+logging:
+  pattern:
+    level: '%5p [${spring.application.name}, %X{traceId:-}, %X{spanId:-}]'
+  level:
+    root: debug
+
+# Tracing
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+````

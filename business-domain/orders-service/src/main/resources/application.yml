@@ -33,7 +33,10 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 logging:
+  pattern:
+    level: '%5p [${spring.application.name}, %X{traceId:-}, %X{spanId:-}]'
   level:
+    root: debug
     org.hibernate.SQL: debug
 
 # Eureka client
@@ -59,6 +62,13 @@ management:
   health:
     circuitbreakers:
       enabled: true
+  # Tracing
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
 
 # Resilience4j - Circuit Breaker
 resilience4j.circuitbreaker:
