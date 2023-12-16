@@ -204,6 +204,15 @@ Ahora definiremos usuarios, roles y configuraremos una aplicación cliente:
 
 ![client](./assets/11.client.png)
 
+**NOTA**
+> Como parte de las url de redirección en mi caso tuve que agregar adicionalmente la siguiente url
+>
+> `https://oauth.pstmn.io/v1/callback`
+>
+> Esa url corresponde a postman desde el cual lo uso para realizar peticiones pero con autenticación OAuth 2.
+> En el tutorial agregamos una url similar `https://oauth.pstmn.io/v1/browser-callback`, pero en mi caso no funcionó
+> tuve que agregar la url mencionada al inicio para poder loguearme desde postman con mi navegador.
+
 ## Agregando nuevas dependencias
 
 Recordemos que estamos trabajando con un proyecto multi-módulo de maven, por lo tanto las dependencias están
@@ -1122,6 +1131,8 @@ microservicio `notifications-service` lo está consumiendo tal como se ve en la 
 
 # Rastreo y monitoreo
 
+## Zipkin
+
 Trabajaremos con `Zipkin` mediante contendor de docker, para eso agregamos la imagen en el `compose.yml`:
 
 ````yaml
@@ -1181,3 +1192,127 @@ management:
     tracing:
       endpoint: http://localhost:9411/api/v2/spans
 ````
+
+## Viendo registros en Zipkin
+
+Antes de continuar vamos a realizar algunas modificaciones al código para ver la traza que ocurre cuando registremos
+una orden.
+
+````java
+
+@Service
+public class OrderServiceImpl implements IOrderService {
+
+    private final IOrderRepository orderRepository;
+    private final RestClient restClient;
+    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final ObservationRegistry observationRegistry;
+
+    public OrderServiceImpl(IOrderRepository orderRepository, RestClient.Builder restClientBuilder,
+                            KafkaTemplate<String, String> kafkaTemplate, ObservationRegistry observationRegistry) {
+        this.orderRepository = orderRepository;
+        this.restClient = restClientBuilder.baseUrl("lb://inventory-service/api/v1/inventories").build();
+        this.kafkaTemplate = kafkaTemplate;
+        this.observationRegistry = observationRegistry;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getAllOrders() {
+        return this.orderRepository.findAll().stream().map(OrderMapper::mapToOrderResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse placeOrder(OrderRequest orderRequest) {
+        Observation inventoryObservation = Observation.createNotStarted("inventory-service", this.observationRegistry);
+        // Se usa para realizar una observación en una métrica registrada y recoger un valor de manera dinámica mediante
+        // el supplier
+        return inventoryObservation.observe(() -> {
+
+            // Check for inventory
+            BaseResponse response = this.restClient.post()
+                    .uri("/in-stock")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(orderRequest.items())
+                    .retrieve()
+                    .body(BaseResponse.class);
+
+            if (response == null || response.hasErrors()) {
+                throw new IllegalArgumentException("Some of products are not in stock");
+            }
+
+            Order order = OrderMapper.mapToOrder(orderRequest);
+            Order orderDB = this.orderRepository.save(order);
+
+            //TODO: Send message to order topic
+            OrderEvent orderEvent = new OrderEvent(orderDB.getOrderNumber(), orderDB.getItems().size(), OrderStatus.PLACED);
+            this.kafkaTemplate.send("orders-topic", JsonMapper.toJson(orderEvent));
+
+            return OrderMapper.mapToOrderResponse(orderDB);
+
+        });
+    }
+}
+````
+
+Observemos que hemos agregado dentro del método `placeOrder(...)` un objeto `Observation` que es del package
+`micrometer`. Estamos encerrando toda la lógica dentro del método `.observe()` y lo estamos devolviendo con un
+`supplier` (función anónima que retorna un objeto).
+
+La otra modificación que realizaremos será en el `RestClientConfig`:
+
+````java
+
+@Configuration
+public class RestClientConfig {
+    @LoadBalanced
+    @Bean
+    public RestClient.Builder restClientBuilder(ObservationRegistry observationRegistry) {
+        return RestClient.builder()
+                // Para propagar token a otros microservicios
+                .requestInterceptors(clientHttpRequestInterceptors -> {
+                    clientHttpRequestInterceptors.add((request, body, execution) -> {
+                        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                        if (authentication == null) {
+                            return execution.execute(request, body);
+                        }
+
+                        if (!(authentication.getCredentials() instanceof AbstractOAuth2Token)) {
+                            return execution.execute(request, body);
+                        }
+
+                        AbstractOAuth2Token token = (AbstractOAuth2Token) authentication.getCredentials();
+                        request.getHeaders().setBearerAuth(token.getTokenValue());
+                        return execution.execute(request, body);
+                    });
+                })
+                // Para ver el registro completo de las solicitudes (en zipkin) cuando hay comunicación entre varios microservicios
+                .observationRegistry(observationRegistry)
+                .observationConvention(new DefaultClientRequestObservationConvention());
+    }
+}
+````
+
+Lo que se hizo fue inyectar por el parámetro del método el objeto `ObservationRegistry` quien será utilizado por el
+`RestClient.builder` y además le definimos un objeto del tipo `DefaultClientRequestObservationConvention` quien
+permitirá crear una convención con el nombre predeterminado "http.client.requests".
+
+**NOTA**
+> Es importante estas modificaciones realizadas, pues al hacerlas nos permitirá ver todo el flujo completo de la
+> petición que hagamos al microservicio `orders-service`, para ser más exactos a su método `placeOrder()`, este método
+> se comunica con el microservicio `inventory-service`, en tal sentido, al ver el detalle de la petición con `zipkin`
+> no tendremos problemas en ver todo el recorrido, desde el microservicio `orders-service` hasta el microservicio
+> `inventory-service`.
+>
+> Si no realizamos las configuraciones anteriores, veremos que la solicitud se verá de manera
+> independiente, es decir, por un lado mostrará la solictud al método `placeOrder()` y, por otro lado, de manera
+> independiente mostrará la solicitud al `lb://inventory-service/api/v1/inventories/in-stock`.
+
+Ahora sí, veamos cómo se muestra la solicitud realizada al microservicio `orders-service` método `placeOrder()`:
+
+![request trace](./assets/34.request-trace.png)
+
+![request trace](./assets/35.request-trace.png)
+
+![request trace](./assets/36.request-trace.png)
