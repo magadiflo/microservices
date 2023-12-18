@@ -28,8 +28,14 @@ logging:
     org.springframework.web: debug
     org.springframework.security: debug
 
-# Tracing
+# Actuator
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+      base-path: /actuator/discovery
+  # Tracing
   tracing:
     sampling:
       probability: 1.0

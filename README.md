@@ -1360,7 +1360,7 @@ scrape_configs:
         labels:
           application: 'Orders Service'
   - job_name: 'inventory-service'
-    metrics_path: '/actuator/inventories/prometheus'
+    metrics_path: '/actuator/inventory/prometheus'
     static_configs:
       - targets: [ 'host.docker.internal:8080' ]
         labels:
@@ -1390,3 +1390,97 @@ prometheus, cosa que veremos en el siguiente capítulo:
 
 ![start promethetus](./assets/37.start-prometheus.png)
 
+## Configurando métricas de prometheus en cada microservicio
+
+Para los microservicios **products, orders e inventory** debemos agregar el endpoint de prometheus en
+sus `application.yml`:
+
+````yml
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+# other configs
+````
+
+En el microservicio discovery:
+
+````yml
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+      base-path: /actuator/discovery
+````
+
+Finalmente, en el microservicio `api-gateway` agregamos la ruta de actuator que hasta el momento no lo habíamos agregado
+y también incluímos el endpoint de prometheus:
+
+````yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        # Discovery actuator routes
+        - id: discovery-service-actuator-route
+          uri: http://localhost:8761/actuator/discovery/**
+          predicates:
+            - Path=/actuator/discovery/**
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+      base-path: /actuator
+````
+
+Es importante habilitar en endpoint de `/actuator/<microservicio>` en el `Security Config` de los microservicios. En
+este caso, para los microservicios **products, orders e inventory** necesitamos especificar dicha ruta de la siguiente
+manera:
+
+Ejemplo para `orders`:
+
+````java
+
+@EnableWebSecurity
+@Configuration
+public class SecurityConfig {
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http.csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(request -> request.getRequestURI().contains("/actuator/orders")).permitAll()
+                        .anyRequest().authenticated())
+                .oauth2ResourceServer(configure -> configure.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter())));
+
+        return http.build();
+    }
+}
+````
+
+Para el microservicio `api-gateway` definiremos el endpoint de `actuator` de la siguiente manera:
+
+````java
+
+@Configuration
+public class SecurityConfig {
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) throws Exception {
+        http.csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .authorizeExchange(authorize -> authorize
+                        .pathMatchers("/actuator/**").permitAll()
+                        .anyExchange().authenticated())
+                .oauth2Login(Customizer.withDefaults());
+        return http.build();
+    }
+}
+````
+
+Ahora, levantamos todos los microservicios y realizamos peticiones para verlos en prometheus:
+
+![métricas](./assets/38.metricas.png)

@@ -15,7 +15,7 @@ scrape_configs:
         labels:
           application: 'Orders Service'
   - job_name: 'inventory-service'
-    metrics_path: '/actuator/inventories/prometheus'
+    metrics_path: '/actuator/inventory/prometheus'
     static_configs:
       - targets: ['host.docker.internal:8080']
         labels:
