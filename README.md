@@ -204,6 +204,15 @@ Ahora definiremos usuarios, roles y configuraremos una aplicación cliente:
 
 ![client](./assets/11.client.png)
 
+**NOTA**
+> Como parte de las url de redirección en mi caso tuve que agregar adicionalmente la siguiente url
+>
+> `https://oauth.pstmn.io/v1/callback`
+>
+> Esa url corresponde a postman desde el cual lo uso para realizar peticiones pero con autenticación OAuth 2.
+> En el tutorial agregamos una url similar `https://oauth.pstmn.io/v1/browser-callback`, pero en mi caso no funcionó
+> tuve que agregar la url mencionada al inicio para poder loguearme desde postman con mi navegador.
+
 ## Agregando nuevas dependencias
 
 Recordemos que estamos trabajando con un proyecto multi-módulo de maven, por lo tanto las dependencias están
@@ -1117,3 +1126,361 @@ Como observamos, hemos realizado un registro de una orden quien está publicando
 microservicio `notifications-service` lo está consumiendo tal como se ve en la siguiente imagen:
 
 ![kafka consumer](./assets/33.kafka-consumer.png)
+
+---
+
+# Rastreo y monitoreo
+
+## Zipkin
+
+Trabajaremos con `Zipkin` mediante contendor de docker, para eso agregamos la imagen en el `compose.yml`:
+
+````yaml
+services:
+  ### Zipkin
+  zipkin:
+    container_name: zipkin
+    image: openzipkin/zipkin:2.24.2
+    ports:
+      - 9411:9411
+````
+
+## Dependencias
+
+En el `pom.xml` del microservicio `api-gateway` y de los microservicios de dominio agregaré las siguientes
+dependencias:
+
+````xml
+
+<dependencies>
+    <!--Tracing-->
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-tracing-bridge-brave</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.zipkin.reporter2</groupId>
+        <artifactId>zipkin-reporter-brave</artifactId>
+    </dependency>
+</dependencies>
+````
+
+## Configurando microservicios
+
+Para el uso de `zipkin` y la configuración del patrón de `LOG` vamos a agregar la siguiente configuración en
+los `application.yml` de los siguientes microservicios: **products-service, orders-service, inventory-service,
+api-gateway y discovery-server:**
+
+````yaml
+# Log
+logging:
+  pattern:
+    level: '%5p [${spring.application.name}, %X{traceId:-}, %X{spanId:-}]'
+  level:
+    root: debug
+
+# Tracing
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+````
+
+## Viendo registros en Zipkin
+
+Antes de continuar vamos a realizar algunas modificaciones al código para ver la traza que ocurre cuando registremos
+una orden.
+
+````java
+
+@Service
+public class OrderServiceImpl implements IOrderService {
+
+    private final IOrderRepository orderRepository;
+    private final RestClient restClient;
+    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final ObservationRegistry observationRegistry;
+
+    public OrderServiceImpl(IOrderRepository orderRepository, RestClient.Builder restClientBuilder,
+                            KafkaTemplate<String, String> kafkaTemplate, ObservationRegistry observationRegistry) {
+        this.orderRepository = orderRepository;
+        this.restClient = restClientBuilder.baseUrl("lb://inventory-service/api/v1/inventories").build();
+        this.kafkaTemplate = kafkaTemplate;
+        this.observationRegistry = observationRegistry;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getAllOrders() {
+        return this.orderRepository.findAll().stream().map(OrderMapper::mapToOrderResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse placeOrder(OrderRequest orderRequest) {
+        Observation inventoryObservation = Observation.createNotStarted("inventory-service", this.observationRegistry);
+        // Se usa para realizar una observación en una métrica registrada y recoger un valor de manera dinámica mediante
+        // el supplier
+        return inventoryObservation.observe(() -> {
+
+            // Check for inventory
+            BaseResponse response = this.restClient.post()
+                    .uri("/in-stock")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(orderRequest.items())
+                    .retrieve()
+                    .body(BaseResponse.class);
+
+            if (response == null || response.hasErrors()) {
+                throw new IllegalArgumentException("Some of products are not in stock");
+            }
+
+            Order order = OrderMapper.mapToOrder(orderRequest);
+            Order orderDB = this.orderRepository.save(order);
+
+            //TODO: Send message to order topic
+            OrderEvent orderEvent = new OrderEvent(orderDB.getOrderNumber(), orderDB.getItems().size(), OrderStatus.PLACED);
+            this.kafkaTemplate.send("orders-topic", JsonMapper.toJson(orderEvent));
+
+            return OrderMapper.mapToOrderResponse(orderDB);
+
+        });
+    }
+}
+````
+
+Observemos que hemos agregado dentro del método `placeOrder(...)` un objeto `Observation` que es del package
+`micrometer`. Estamos encerrando toda la lógica dentro del método `.observe()` y lo estamos devolviendo con un
+`supplier` (función anónima que retorna un objeto).
+
+La otra modificación que realizaremos será en el `RestClientConfig`:
+
+````java
+
+@Configuration
+public class RestClientConfig {
+    @LoadBalanced
+    @Bean
+    public RestClient.Builder restClientBuilder(ObservationRegistry observationRegistry) {
+        return RestClient.builder()
+                // Para propagar token a otros microservicios
+                .requestInterceptors(clientHttpRequestInterceptors -> {
+                    clientHttpRequestInterceptors.add((request, body, execution) -> {
+                        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                        if (authentication == null) {
+                            return execution.execute(request, body);
+                        }
+
+                        if (!(authentication.getCredentials() instanceof AbstractOAuth2Token)) {
+                            return execution.execute(request, body);
+                        }
+
+                        AbstractOAuth2Token token = (AbstractOAuth2Token) authentication.getCredentials();
+                        request.getHeaders().setBearerAuth(token.getTokenValue());
+                        return execution.execute(request, body);
+                    });
+                })
+                // Para ver el registro completo de las solicitudes (en zipkin) cuando hay comunicación entre varios microservicios
+                .observationRegistry(observationRegistry)
+                .observationConvention(new DefaultClientRequestObservationConvention());
+    }
+}
+````
+
+Lo que se hizo fue inyectar por el parámetro del método el objeto `ObservationRegistry` quien será utilizado por el
+`RestClient.builder` y además le definimos un objeto del tipo `DefaultClientRequestObservationConvention` quien
+permitirá crear una convención con el nombre predeterminado "http.client.requests".
+
+**NOTA**
+> Es importante estas modificaciones realizadas, pues al hacerlas nos permitirá ver todo el flujo completo de la
+> petición que hagamos al microservicio `orders-service`, para ser más exactos a su método `placeOrder()`, este método
+> se comunica con el microservicio `inventory-service`, en tal sentido, al ver el detalle de la petición con `zipkin`
+> no tendremos problemas en ver todo el recorrido, desde el microservicio `orders-service` hasta el microservicio
+> `inventory-service`.
+>
+> Si no realizamos las configuraciones anteriores, veremos que la solicitud se verá de manera
+> independiente, es decir, por un lado mostrará la solictud al método `placeOrder()` y, por otro lado, de manera
+> independiente mostrará la solicitud al `lb://inventory-service/api/v1/inventories/in-stock`.
+
+Ahora sí, veamos cómo se muestra la solicitud realizada al microservicio `orders-service` método `placeOrder()`:
+
+![request trace](./assets/34.request-trace.png)
+
+![request trace](./assets/35.request-trace.png)
+
+![request trace](./assets/36.request-trace.png)
+
+## Prometheus
+
+Es un sistema de monitoreo y alerta de código abierto que se utiliza para recopilar, almacenar, consultar y visualizar
+métricas y datos de rendimientos de sistemas y aplicaciones. Se encarga de recopilar métricas de sistemas y aplicaciones
+a intervalos regulares. Estas métricas son almacenadas en una base de datos de series temporales lo que permite un
+acceso rápido y eficiente a los datos históricos.
+
+Prometheus utiliza una serie de métricas `clave-valor` con una marca de tiempo para representar los datos.
+
+Crearemos un contenedor de Docker de `Prometheus` utilizando nuestro archivo `compose.yml`:
+
+````yml
+services:
+  ### Prometheus
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v2.46.0
+    ports:
+      - 9090:9090
+    volumes:
+      - ./files/prometheus.yml:/etc/prometheus/prometheus.yml
+````
+
+Creamos el archivo `prometheus.yml` que usamos en el volume:
+
+````yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+scrape_configs:
+  - job_name: 'products-service'
+    metrics_path: '/actuator/products/prometheus'
+    static_configs:
+      - targets: [ 'host.docker.internal:8080' ]
+        labels:
+          application: 'Products Service'
+  - job_name: 'orders-service'
+    metrics_path: '/actuator/orders/prometheus'
+    static_configs:
+      - targets: [ 'host.docker.internal:8080' ]
+        labels:
+          application: 'Orders Service'
+  - job_name: 'inventory-service'
+    metrics_path: '/actuator/inventory/prometheus'
+    static_configs:
+      - targets: [ 'host.docker.internal:8080' ]
+        labels:
+          application: 'Inventory Service'
+````
+
+Ejecutamos docker compose con el comando `docker compose up -d`, luego debemos verificar que todos los contenedores
+están levantados, incluyendo el nuevo contenedor de `prometheus`:
+
+````bash
+$ docker container ls -a
+CONTAINER ID   IMAGE                              COMMAND                  CREATED          STATUS                             PORTS                                         NAMES
+3d3af6a3edbe   prom/prometheus:v2.46.0            "/bin/prometheus --c…"   23 seconds ago   Up 13 seconds                      0.0.0.0:9090->9090/tcp                        prometheus
+875898701d72   openzipkin/zipkin:2.24.2           "start-zipkin"           2 days ago       Up 13 seconds (health: starting)   9410/tcp, 0.0.0.0:9411->9411/tcp              zipkin
+0fc940142290   confluentinc/cp-kafka:7.4.0        "/etc/confluent/dock…"   3 days ago       Up 12 seconds                      0.0.0.0:9092->9092/tcp                        kafka
+cbbcf5f81f8d   confluentinc/cp-zookeeper:7.4.0    "/etc/confluent/dock…"   3 days ago       Up 13 seconds                      2181/tcp, 2888/tcp, 3888/tcp                  zookeeper
+4562356dd68f   quay.io/keycloak/keycloak:21.0.2   "/opt/keycloak/bin/k…"   5 days ago       Up 30 minutes                      8181/tcp, 8443/tcp, 0.0.0.0:8181->8080/tcp    keycloak
+cad2c035fb75   postgres:15.2-alpine               "docker-entrypoint.s…"   5 days ago       Up 30 minutes                      5435/tcp, 0.0.0.0:5435->5432/tcp              db-keycloak
+4cde30018af0   postgres:15.2-alpine               "docker-entrypoint.s…"   10 days ago      Up 30 minutes                      5434/tcp, 0.0.0.0:5434->5432/tcp              db-products
+180c531d27e9   postgres:15.2-alpine               "docker-entrypoint.s…"   10 days ago      Up 30 minutes                      5433/tcp, 0.0.0.0:5433->5432/tcp              db-inventory
+d6714776dc2e   mysql:8.0.33                       "docker-entrypoint.s…"   10 days ago      Up 30 minutes                      3307/tcp, 33060/tcp, 0.0.0.0:3307->3306/tcp   db-orders
+````
+
+Ahora podemos usar el navegador para ver corriendo `prometheus`. Observaremos que los microservicios definidos en el
+archivo `prometheus.yml` están `offline`, eso significa que debemos exponer en cada microservicio las métricas de
+prometheus, cosa que veremos en el siguiente capítulo:
+
+![start promethetus](./assets/37.start-prometheus.png)
+
+## Configurando métricas de prometheus en cada microservicio
+
+Para los microservicios **products, orders e inventory** debemos agregar el endpoint de prometheus en
+sus `application.yml`:
+
+````yml
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+# other configs
+````
+
+En el microservicio discovery:
+
+````yml
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+      base-path: /actuator/discovery
+````
+
+Finalmente, en el microservicio `api-gateway` agregamos la ruta de actuator que hasta el momento no lo habíamos agregado
+y también incluímos el endpoint de prometheus:
+
+````yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        # Discovery actuator routes
+        - id: discovery-service-actuator-route
+          uri: http://localhost:8761/actuator/discovery/**
+          predicates:
+            - Path=/actuator/discovery/**
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+      base-path: /actuator
+````
+
+Es importante habilitar en endpoint de `/actuator/<microservicio>` en el `Security Config` de los microservicios. En
+este caso, para los microservicios **products, orders e inventory** necesitamos especificar dicha ruta de la siguiente
+manera:
+
+Ejemplo para `orders`:
+
+````java
+
+@EnableWebSecurity
+@Configuration
+public class SecurityConfig {
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http.csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(request -> request.getRequestURI().contains("/actuator/orders")).permitAll()
+                        .anyRequest().authenticated())
+                .oauth2ResourceServer(configure -> configure.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter())));
+
+        return http.build();
+    }
+}
+````
+
+Para el microservicio `api-gateway` definiremos el endpoint de `actuator` de la siguiente manera:
+
+````java
+
+@Configuration
+public class SecurityConfig {
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) throws Exception {
+        http.csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .authorizeExchange(authorize -> authorize
+                        .pathMatchers("/actuator/**").permitAll()
+                        .anyExchange().authenticated())
+                .oauth2Login(Customizer.withDefaults());
+        return http.build();
+    }
+}
+````
+
+Ahora, levantamos todos los microservicios y realizamos peticiones para verlos en prometheus:
+
+![métricas](./assets/38.metricas.png)

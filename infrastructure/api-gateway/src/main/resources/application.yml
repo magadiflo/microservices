@@ -40,6 +40,7 @@ spring:
           predicates:
             - Path=/eureka/**
 
+        ###### Actuator Routes ######
         # Inventory actuator routes
         - id: inventory-service-actuator-route
           uri: lb://inventory-service/actuator/inventory/**
@@ -57,6 +58,12 @@ spring:
           uri: lb://products-service/actuator/products/**
           predicates:
             - Path=/actuator/products/**
+
+        # Discovery actuator routes
+        - id: discovery-service-actuator-route
+          uri: http://localhost:8761/actuator/discovery/**
+          predicates:
+            - Path=/actuator/discovery/**
 
       default-filters:
         - SaveSession
@@ -90,6 +97,8 @@ eureka:
 
 # Log
 logging:
+  pattern:
+    level: '%5p [${spring.application.name}, %X{traceId:-}, %X{spanId:-}]'
   level:
     root: info
     org.springframework.cloud.gateway: trace
@@ -100,5 +109,12 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
       base-path: /actuator
+  # Tracing
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans

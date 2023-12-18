@@ -97,3 +97,17 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+  ### Zipkin
+  zipkin:
+    container_name: zipkin
+    image: openzipkin/zipkin:2.24.2
+    ports:
+      - 9411:9411
+  ### Prometheus
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v2.46.0
+    ports:
+      - 9090:9090
+    volumes:
+      - ./files/prometheus.yml:/etc/prometheus/prometheus.yml
