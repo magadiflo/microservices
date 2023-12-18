@@ -1316,3 +1316,77 @@ Ahora sí, veamos cómo se muestra la solicitud realizada al microservicio `orde
 ![request trace](./assets/35.request-trace.png)
 
 ![request trace](./assets/36.request-trace.png)
+
+## Prometheus
+
+Es un sistema de monitoreo y alerta de código abierto que se utiliza para recopilar, almacenar, consultar y visualizar
+métricas y datos de rendimientos de sistemas y aplicaciones. Se encarga de recopilar métricas de sistemas y aplicaciones
+a intervalos regulares. Estas métricas son almacenadas en una base de datos de series temporales lo que permite un
+acceso rápido y eficiente a los datos históricos.
+
+Prometheus utiliza una serie de métricas `clave-valor` con una marca de tiempo para representar los datos.
+
+Crearemos un contenedor de Docker de `Prometheus` utilizando nuestro archivo `compose.yml`:
+
+````yml
+services:
+  ### Prometheus
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v2.46.0
+    ports:
+      - 9090:9090
+    volumes:
+      - ./files/prometheus.yml:/etc/prometheus/prometheus.yml
+````
+
+Creamos el archivo `prometheus.yml` que usamos en el volume:
+
+````yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+scrape_configs:
+  - job_name: 'products-service'
+    metrics_path: '/actuator/products/prometheus'
+    static_configs:
+      - targets: [ 'host.docker.internal:8080' ]
+        labels:
+          application: 'Products Service'
+  - job_name: 'orders-service'
+    metrics_path: '/actuator/orders/prometheus'
+    static_configs:
+      - targets: [ 'host.docker.internal:8080' ]
+        labels:
+          application: 'Orders Service'
+  - job_name: 'inventory-service'
+    metrics_path: '/actuator/inventories/prometheus'
+    static_configs:
+      - targets: [ 'host.docker.internal:8080' ]
+        labels:
+          application: 'Inventory Service'
+````
+
+Ejecutamos docker compose con el comando `docker compose up -d`, luego debemos verificar que todos los contenedores
+están levantados, incluyendo el nuevo contenedor de `prometheus`:
+
+````bash
+$ docker container ls -a
+CONTAINER ID   IMAGE                              COMMAND                  CREATED          STATUS                             PORTS                                         NAMES
+3d3af6a3edbe   prom/prometheus:v2.46.0            "/bin/prometheus --c…"   23 seconds ago   Up 13 seconds                      0.0.0.0:9090->9090/tcp                        prometheus
+875898701d72   openzipkin/zipkin:2.24.2           "start-zipkin"           2 days ago       Up 13 seconds (health: starting)   9410/tcp, 0.0.0.0:9411->9411/tcp              zipkin
+0fc940142290   confluentinc/cp-kafka:7.4.0        "/etc/confluent/dock…"   3 days ago       Up 12 seconds                      0.0.0.0:9092->9092/tcp                        kafka
+cbbcf5f81f8d   confluentinc/cp-zookeeper:7.4.0    "/etc/confluent/dock…"   3 days ago       Up 13 seconds                      2181/tcp, 2888/tcp, 3888/tcp                  zookeeper
+4562356dd68f   quay.io/keycloak/keycloak:21.0.2   "/opt/keycloak/bin/k…"   5 days ago       Up 30 minutes                      8181/tcp, 8443/tcp, 0.0.0.0:8181->8080/tcp    keycloak
+cad2c035fb75   postgres:15.2-alpine               "docker-entrypoint.s…"   5 days ago       Up 30 minutes                      5435/tcp, 0.0.0.0:5435->5432/tcp              db-keycloak
+4cde30018af0   postgres:15.2-alpine               "docker-entrypoint.s…"   10 days ago      Up 30 minutes                      5434/tcp, 0.0.0.0:5434->5432/tcp              db-products
+180c531d27e9   postgres:15.2-alpine               "docker-entrypoint.s…"   10 days ago      Up 30 minutes                      5433/tcp, 0.0.0.0:5433->5432/tcp              db-inventory
+d6714776dc2e   mysql:8.0.33                       "docker-entrypoint.s…"   10 days ago      Up 30 minutes                      3307/tcp, 33060/tcp, 0.0.0.0:3307->3306/tcp   db-orders
+````
+
+Ahora podemos usar el navegador para ver corriendo `prometheus`. Observaremos que los microservicios definidos en el
+archivo `prometheus.yml` están `offline`, eso significa que debemos exponer en cada microservicio las métricas de
+prometheus, cosa que veremos en el siguiente capítulo:
+
+![start promethetus](./assets/37.start-prometheus.png)
+
