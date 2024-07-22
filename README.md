@@ -1147,8 +1147,8 @@ services:
 
 ## Dependencias
 
-En el `pom.xml` del microservicio `api-gateway` y de los microservicios de dominio agregaré las siguientes
-dependencias:
+Agregaremos las siguientes dependencias en el `pom.xml` de los microservicios `api-gateway`, `inventory-service`,
+`orders-service` y `products-service`:
 
 ````xml
 
@@ -1169,11 +1169,39 @@ dependencias:
 </dependencies>
 ````
 
+**Donde**
+
+- `micrometer-tracing-bridge-brave` es una extensión de la biblioteca `micrometer` que permite
+  integrar `micrometer` con `brave`, una biblioteca de rastreo distribuído utilizada para implementar la especificación
+  de `open tracing` y `zipkin`. Brave es compatible con la especificación de `open tracing` lo que permite que las
+  trazas generadas sean utilizadas por sistemas de rastreo distribuidos como `zipkin`. Esto permite la visualización y
+  un análisis más profundo de cómo se propaga las solicitudes a través de una aplicación.
+
+
+- `micrometer-registry-prometheus` también es un módulo de la biblioteca `micrometer` que proporciona la integración
+  de `micrometer` com `prometheus`. Más adelante veremos `Prometheus` en funcionamiento, por ahora, hay que saber que es
+  un sistema de monitoreo y alerta de código abierto. La combinación de `micrometer` y `prometheus` permite a los
+  desarrolladores recopilar, almacenar y consultar métricas de rendimiento y salud de una aplicación de manera
+  eficiente.
+
+
+- `zipkin-reporter-brave` es una biblioteca de java que actúa como un puente entre `brave` y `zipkin`, permite que las
+  trazas generadas por `brave` se envíen y reporten al servidor de `zipkin` para su almacenamiento y análisis. Esta
+  librería es útil cuando se desea utilizar `brave` con una librería de rastreo distribuido en una aplicación y al mismo
+  tiempo aprovechar `zipkin` como el backend para almacenar y visualizar las trazas.
+
+**NOTA**
+> En las versiones de Spring Boot 2.x se utilizaba la librería `Sleuth` en vez de `micrometer`. Según la documentación
+> oficial se menciona  `Spring Cloud Sleuth no funcionará con Spring Boot 3.x en adelante. La última versión
+> principal de Spring Boot que admitirá Sleuth es la 2.x. El núcleo de este proyecto se trasladó al proyecto
+> Micrometer Tracing y las instrumentaciones se trasladarán a Micrometer y a todos los proyectos respectivos
+> (ya no todas las instrumentaciones se realizarán en un único repositorio)`.
+
 ## Configurando microservicios
 
 Para el uso de `zipkin` y la configuración del patrón de `LOG` vamos a agregar la siguiente configuración en
-los `application.yml` de los siguientes microservicios: **products-service, orders-service, inventory-service,
-api-gateway y discovery-server:**
+los `application.yml` de los microservicios `products-service`, `orders-service`, `inventory-service`,
+`api-gateway` y `discovery-server`.
 
 ````yaml
 # Log
@@ -1192,6 +1220,26 @@ management:
     tracing:
       endpoint: http://localhost:9411/api/v2/spans
 ````
+
+**Donde**
+
+- `logging.pattern.level`, modificamos esta propiedad para tener registros con más detalles de la aplicación.
+
+
+- `management.tracing.sampling.probability`, permite establecer la probabilidad de muestreo de las trazas generadas. Su
+  valor debe estar entre 0 y 1, donde `cero (0) significa que no se generen trazas`
+  y `uno (1) que se generen trazas para todas las solicitudes`. Cuando se habilita el rastreo distribuido, la aplicación
+  generará trazas para cada solicitud y propagará la información de seguimiento a través de los componentes de la
+  aplicación. Sin embargo, generar trazas detalladas para cada solicitud puede tener un costo significativo en términos
+  de rendimiento y almacenamiento, por lo tanto, es común utilizar un muestreo probabilístico para reducir la carga
+  generada por el rastreo distribuido. Por defecto es 0.1, es decir un 10% de las trazas serán registradas. Nosotros, en
+  este ejemplo registraremos el 100% de las trazas generadas, en consecuencia, como valor colocamos 1 (100%).
+
+
+- `management.zipkin.tracing.endpoint`, se utiliza para especificar la url del servidor de rastreo de `Zipkin` al
+  que se envían las trazas generadas por la aplicación. Es importante mencionar que por defecto `zipkin` viene
+  configurado con el endpoint `http://localhost:9411/api/v2/spans`. En nuestro caso, lo estamos definiendo
+  explícitamente.
 
 ## Viendo registros en Zipkin
 
@@ -1295,8 +1343,16 @@ public class RestClientConfig {
 ````
 
 Lo que se hizo fue inyectar por el parámetro del método el objeto `ObservationRegistry` quien será utilizado por el
-`RestClient.builder` y además le definimos un objeto del tipo `DefaultClientRequestObservationConvention` quien
-permitirá crear una convención con el nombre predeterminado "http.client.requests".
+`RestClient.builder` y además le definimos un objeto del tipo `DefaultClientRequestObservationConvention`.
+
+El método `.observationRegistry()` permite configurar un `ObservationRegistry` para utilizarlo para registrar
+observaciones de clientes `HTTP`. Este método espera recibir el registro de observaciones a utilizar.
+
+El método `.observationConvention()` configura el `io.micrometer.observation.ObservationConvention` que se utilizará
+para recopilar metadatos para la observación de solicitud. Si no se proporciona ningún objeto se utilizará por defecto
+`org.springframework.http.client.observation.DefaultClientRequestObservationConvention`, aunque nosotros estamos
+siendo explícitos y le estamos proporcionando la misma clase por defecto. Este método espera recibir la convención
+de observación a utilizar.
 
 **NOTA**
 > Es importante estas modificaciones realizadas, pues al hacerlas nos permitirá ver todo el flujo completo de la
@@ -1367,6 +1423,25 @@ scrape_configs:
           application: 'Inventory Service'
 ````
 
+**Donde**
+
+- `scrape_interval: 15s`, con qué frecuencia prometheus recolectará y actualizará las métricas de los objetivos
+  configurados. Esto tiene un impacto directo en la frecuencia con que se actualizan los datos en el sistema de
+  monitoreo y las alertas basadas en las métricas.
+- `evaluation_interval: 15s`, define el intervalo de tiempo en el que Prometheus evalúa las expresiones de reglas de
+  alerta definidas en la configuración. Cuando se realiza una evaluación Prometheus verifica si se cumplen las
+  condiciones definidas en la regla de alerta y si es así, activa la alerta correspondiente. `En nuestro caso no vamos a
+  configurar alertas`.
+- `scrape_configs`, cada elemento de esta configuración define un trabajo `job_name` que agrupa un conjunto de objetivos
+  relacionados. Dentro de cada `Job` podemos especificar diferentes opciones de configuración, como los objetivos
+  específicos a recolectar, la frecuencia, los protocolos, etc.
+- `metrics_path`, se usa para especificar la ruta de acceso, ya sea relativa o absoluta a la cual prometheus enviará las
+  solicitudes de scrape al objetivo configurado.
+- `static_configs`, permite definir objetivos estáticos para la recolección de métricas. Cada objetivo se especifica
+  mediante una combinación de `targets` y `labels`. Los `targets` (objetivos) representan los puntos de acceso, los
+  endpoints de donde prometheus recopilará métricas y los `labels` proporcionan metadatos adicionales para etiquetar y
+  organizar los objetivos.
+
 Ejecutamos docker compose con el comando `docker compose up -d`, luego debemos verificar que todos los contenedores
 están levantados, incluyendo el nuevo contenedor de `prometheus`:
 
@@ -1392,8 +1467,7 @@ prometheus, cosa que veremos en el siguiente capítulo:
 
 ## Configurando métricas de prometheus en cada microservicio
 
-Para los microservicios **products, orders e inventory** debemos agregar el endpoint de prometheus en
-sus `application.yml`:
+En los microservicios `products`, `orders`, `inventory`:
 
 ````yml
 # Actuator
@@ -1405,7 +1479,7 @@ management:
 # other configs
 ````
 
-En el microservicio discovery:
+En el microservicio `discovery`:
 
 ````yml
 # Actuator
@@ -1417,7 +1491,7 @@ management:
       base-path: /actuator/discovery
 ````
 
-Finalmente, en el microservicio `api-gateway` agregamos la ruta de actuator que hasta el momento no lo habíamos agregado
+En el microservicio `api-gateway` agregamos la ruta de actuator que hasta el momento no lo habíamos agregado
 y también incluímos el endpoint de prometheus:
 
 ````yaml
