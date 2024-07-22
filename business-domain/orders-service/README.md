@@ -143,8 +143,9 @@ Crearemos una clase de configuración donde expondremos un bean del tipo `RestCl
 
 @Configuration
 public class RestClientConfig {
+    // @LoadBalanced, annotation para marcar un bean RestTemplate, RestClient.Builder o WebClient.Builder
+    // para configurarlo para utilizar un LoadBalancerClient.
     @LoadBalanced
-    //<-- Annotation para marcar un bean RestTemplate, RestClient.Builder o WebClient.Builder para configurarlo para utilizar un LoadBalancerClient.
     @Bean
     RestClient.Builder restClientBuilder() {
         return RestClient.builder();
